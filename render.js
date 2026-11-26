@@ -1,110 +1,123 @@
 // Draws a fobling as inline SVG from its seed, stage, mood and adult form.
+// Style: soft vinyl-toy look. Big low-set shiny eyes, blush, outlines in a deep
+// shade of the body colour, a glossy highlight, tidy markings.
 import { traits, STAGES } from './pet.js';
 
 const INK = 'var(--pet-ink)';
-const SCALE = [0.6, 0.74, 0.86, 1, 0.97];
+const SCALE = [0.74, 0.83, 0.91, 1, 0.98];
 let uid = 0;
 
-// Each body: an outline path (or circles, for the puff), where the face sits, and the top of the head.
+// Each body: outline (path, or circles for the puff), face height, top of head, where the arms go.
 const BODIES = [
-  { d: 'M100 44C148 44 166 88 166 124C166 160 136 176 100 176C64 176 34 160 34 124C34 88 52 44 100 44Z', face: 112, top: 44 },
-  { d: 'M102 30C140 30 154 70 152 110C150 150 140 176 100 176C62 176 48 150 50 112C52 72 64 30 102 30Z', face: 100, top: 30 },
-  { circles: [[100, 120, 56], [62, 132, 34], [138, 132, 34], [80, 86, 30], [122, 86, 30]], face: 116, top: 56 },
-  { d: 'M100 56C140 56 160 98 160 130C160 162 132 176 100 176C68 176 40 162 40 130C40 98 60 56 100 56Z', face: 122, top: 56 },
+  { d: 'M100 50C146 50 168 92 168 130C168 164 140 178 100 178C60 178 32 164 32 130C32 92 54 50 100 50Z', face: 122, top: 50, arm: [60, 150] },
+  { d: 'M100 34C140 34 158 78 158 120C158 158 134 178 100 178C66 178 42 158 42 120C42 78 60 34 100 34Z', face: 114, top: 34, arm: [54, 146] },
+  { circles: [[100, 130, 50], [64, 142, 34], [136, 142, 34], [76, 100, 30], [124, 100, 30], [100, 86, 30]], face: 126, top: 56, arm: null },
+  { d: 'M100 60C138 60 160 102 160 136C160 166 134 178 100 178C66 178 40 166 40 136C40 102 62 60 100 60Z', face: 132, top: 60, arm: [58, 156] },
 ];
 
 const shapes = (b, attrs) =>
   b.circles ? b.circles.map(([cx, cy, r]) => `<circle cx="${cx}" cy="${cy}" r="${r}" ${attrs}/>`).join('') : `<path d="${b.d}" ${attrs}/>`;
 
-const line = (d, w = 4, extra = '') => `<path d="${d}" stroke="${INK}" stroke-width="${w}" fill="none" stroke-linecap="round" stroke-linejoin="round" ${extra}/>`;
+const stroke = (d, colour, w = 4, extra = '') =>
+  `<path d="${d}" stroke="${colour}" stroke-width="${w}" fill="none" stroke-linecap="round" stroke-linejoin="round" ${extra}/>`;
+const line = (d, w = 4, extra = '') => stroke(d, INK, w, extra);
 const star = (x, y, r, fill, cls = '') =>
   `<path class="${cls}" d="M${x} ${y - r}Q${x} ${y} ${x + r} ${y}Q${x} ${y} ${x} ${y + r}Q${x} ${y} ${x - r} ${y}Q${x} ${y} ${x} ${y - r}Z" fill="${fill}"/>`;
-
-function colours(t, form) {
-  if (form === 'grumpy') return { body: `hsl(${t.hue} 22% 50%)`, dark: `hsl(${t.hue} 20% 34%)`, pat: `hsl(${t.hue} 24% 40%)`, light: `hsl(${t.hue} 25% 70%)` };
-  if (form === 'radiant') return { body: `hsl(${t.hue} 80% 68%)`, dark: `hsl(${t.hue} 60% 44%)`, pat: `hsl(${(t.hue + 40) % 360} 85% 58%)`, light: `hsl(48 100% 88%)` };
-  return { body: `hsl(${t.hue} 68% 64%)`, dark: `hsl(${t.hue} 55% 42%)`, pat: `hsl(${t.hue} 72% 46%)`, light: `hsl(${t.hue} 85% 86%)` };
-}
-
-function pattern(kind, c, face) {
-  if (kind === 1)
-    return [[70, 70, 9], [132, 76, 7], [148, 130, 10], [56, 140, 8], [118, 158, 7], [90, 160, 5]]
-      .map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${c.pat}"/>`).join('');
-  if (kind === 2) return [52, 70, 150, 168].map((y) => `<path d="M20 ${y}Q100 ${y - 14} 180 ${y}" stroke="${c.pat}" stroke-width="9" fill="none"/>`).join('');
-  if (kind === 3) return `<ellipse cx="100" cy="${face + 44}" rx="40" ry="30" fill="${c.light}"/>`;
-  return '';
-}
-
-function eyes(style, mood, y, form) {
-  const L = 80, R = 120;
-  if (mood === 'asleep') return [L, R].map((x) => line(`M${x - 8} ${y}q8 7 16 0`)).join('');
-  if (mood === 'dead') return [L, R].map((x) => line(`M${x - 6} ${y - 6}l12 12M${x + 6} ${y - 6}l-12 12`)).join('');
-  const r = [7, 9, 4.5, 7][style];
-  const ry = style === 1 ? 11 : r;
-  let s = '<g class="eyes">';
-  s += [L, R].map((x, i) => {
-    const small = style === 3 && i === 1;
-    const rx = small ? r * 0.7 : r;
-    const rr = small ? ry * 0.7 : ry;
-    return `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${rr}" fill="${INK}"/>` +
-      (style !== 2 ? `<circle cx="${x + rx * 0.35}" cy="${y - rr * 0.4}" r="${Math.max(1.6, rx * 0.32)}" fill="#fff"/>` : '');
-  }).join('');
-  s += '</g>';
-  if (mood === 'meh') s += [L, R].map((x) => line(`M${x - 11} ${y - 3}h22`)).join('');
-  if (form === 'grumpy') {
-    s += line(`M${L - 12} ${y - 16}l16 7M${R + 12} ${y - 16}l-16 7`, 5);
-    s += line(`M${L - 7} ${y + 12}q7 4 14 0M${R - 7} ${y + 12}q7 4 14 0`, 2.5, 'opacity=".5"');
-  } else if (mood === 'miserable' || mood === 'starving') {
-    s += line(`M${L - 10} ${y - 12}l14 -6M${R + 10} ${y - 12}l-14 -6`);
-  }
-  return s;
-}
-
-function mouth(mood, y, form) {
-  const m = y + 22;
-  if (form === 'grumpy' && (mood === 'happy' || mood === 'meh')) return line(`M90 ${m + 2}q8 -5 20 -1`);
-  switch (mood) {
-    case 'happy': return `<path d="M88 ${m - 2}Q100 ${m + 12} 112 ${m - 2}Z" fill="${INK}"/>`;
-    case 'meh': return line(`M92 ${m}h16`);
-    case 'asleep': return `<circle cx="100" cy="${m}" r="3.5" fill="${INK}"/>`;
-    case 'dead': return line(`M90 ${m + 2}q5 -5 10 0t10 0`);
-    case 'starving': return `<ellipse cx="100" cy="${m + 2}" rx="7" ry="9" fill="${INK}"/>`;
-    default: return line(`M89 ${m + 5}Q100 ${m - 6} 111 ${m + 5}`);
-  }
-}
-
 const heart = (x, y, s, fill) =>
   `<path d="M${x} ${y + s * 0.9}C${x - s * 1.6} ${y - s * 0.1} ${x - s * 0.8} ${y - s * 1.3} ${x} ${y - s * 0.4}C${x + s * 0.8} ${y - s * 1.3} ${x + s * 1.6} ${y - s * 0.1} ${x} ${y + s * 0.9}Z" fill="${fill}"/>`;
 
+function colours(t, form) {
+  const h = t.hue;
+  if (form === 'grumpy') return { body: `hsl(${h} 18% 58%)`, dark: `hsl(${h} 16% 42%)`, line: `hsl(${h} 20% 22%)`, mark: `hsl(${h} 18% 47%)`, light: `hsl(${h} 18% 76%)` };
+  if (form === 'radiant') return { body: `hsl(${h} 85% 76%)`, dark: `hsl(${h} 70% 58%)`, line: `hsl(${h} 55% 28%)`, mark: `hsl(${(h + 30) % 360} 90% 64%)`, light: `hsl(48 100% 92%)` };
+  return { body: `hsl(${h} 72% 72%)`, dark: `hsl(${h} 55% 55%)`, line: `hsl(${h} 45% 25%)`, mark: `hsl(${h} 62% 60%)`, light: `hsl(${h} 90% 90%)` };
+}
+
+// Tidy markings, kept on the head and belly so they read as a design, not a rash.
+function markings(kind, c, b) {
+  const top = b.top;
+  if (kind === 1) return `<circle cx="100" cy="${top + 16}" r="8" fill="${c.mark}"/><circle cx="80" cy="${top + 24}" r="5.5" fill="${c.mark}"/><circle cx="120" cy="${top + 24}" r="5.5" fill="${c.mark}"/>`;
+  if (kind === 2) return [-16, 0, 16].map((dx) => stroke(`M${100 + dx} ${top - 4}v${dx ? 22 : 28}`, c.mark, 7)).join('');
+  if (kind === 3) return `<ellipse cx="100" cy="${b.face + 46}" rx="38" ry="26" fill="${c.light}"/>`;
+  return '';
+}
+
+const EYES = [[11.5, 13], [11, 15.5], [9, 10], [13, 11.5]];
+
+function eyes(t, mood, F, form, k, c) {
+  const L = 80, R = 120;
+  if (mood === 'asleep') return [L, R].map((x) => line(`M${x - 8} ${F + 1}q8 6 16 0`, 3.6)).join('');
+  if (mood === 'dead') return [L, R].map((x) => line(`M${x - 6} ${F - 6}l12 12M${x + 6} ${F - 6}l-12 12`)).join('');
+  const [rx, ry] = EYES[t.eyes].map((v) => v * k);
+  let s = '<g class="eyes">' + [L, R].map((x) =>
+    `<ellipse cx="${x}" cy="${F}" rx="${rx}" ry="${ry}" fill="${INK}"/>` +
+    `<circle cx="${x + rx * 0.3}" cy="${F - ry * 0.38}" r="${rx * 0.4}" fill="#fff"/>` +
+    `<circle cx="${x - rx * 0.36}" cy="${F + ry * 0.42}" r="${rx * 0.18}" fill="#fff" opacity=".9"/>`).join('') + '</g>';
+  if (mood === 'meh')
+    s += [L, R].map((x) => `<rect x="${x - rx - 2}" y="${F - ry - 3}" width="${2 * rx + 4}" height="${ry * 0.9 + 3}" fill="${c.body}"/>` + line(`M${x - rx - 1} ${F - ry * 0.1}h${2 * rx + 2}`, 3.4)).join('');
+  if (form === 'grumpy') s += line(`M${L - 11} ${F - ry - 9}l16 6M${R + 11} ${F - ry - 9}l-16 6`, 4.6);
+  else if (mood === 'miserable' || mood === 'starving') s += line(`M${L - 9} ${F - ry - 4}l13 -6M${R + 9} ${F - ry - 4}l-13 -6`, 3.6);
+  return s;
+}
+
+function mouth(t, mood, F, form) {
+  const M = F + 18;
+  if (form === 'grumpy' && (mood === 'happy' || mood === 'meh')) return line(`M91 ${M + 3}q4.5 -3 9 0t9 0`, 3.4);
+  switch (mood) {
+    case 'happy':
+      return t.extra & 4
+        ? line(`M91 ${M}q4.5 5 9 0q4.5 5 9 0`, 3.4)
+        : `<path d="M91 ${M - 1}Q100 ${M + 12} 109 ${M - 1}Z" fill="${INK}" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/><ellipse cx="100" cy="${M + 4}" rx="4" ry="2.2" fill="#ff8fa3"/>`;
+    case 'meh': return line(`M95 ${M + 2}h10`, 3.4);
+    case 'asleep': return `<ellipse cx="100" cy="${M + 1}" rx="2.6" ry="3" fill="${INK}"/>`;
+    case 'dead': return line(`M91 ${M + 2}q4.5 -4 9 0t9 0`, 3.4);
+    case 'starving': return `<ellipse cx="100" cy="${M + 3}" rx="4.5" ry="6" fill="${INK}"/>`;
+    default: return line(`M92 ${M + 5}Q100 ${M - 2} 108 ${M + 5}`, 3.4);
+  }
+}
+
 function behind(stage, t, b, c, form, id) {
   let s = '';
-  if (stage >= 1)
-    s += [80, 120].map((x) => `<ellipse cx="${x}" cy="176" rx="14" ry="8" fill="${c.dark}" stroke="${INK}" stroke-width="4"/>`).join('');
+  // feet on every stage
+  s += [86, 114].map((x) => `<ellipse cx="${x}" cy="178" rx="13" ry="7.5" fill="${c.dark}" stroke="${c.line}" stroke-width="4"/>`).join('');
+  // little arms from kid up
+  if (stage >= 1 && b.arm) {
+    const [dx, y] = b.arm;
+    s += `<ellipse cx="${100 - dx}" cy="${y}" rx="9" ry="14" transform="rotate(30 ${100 - dx} ${y})" fill="${c.body}" stroke="${c.line}" stroke-width="4"/>`;
+    s += `<ellipse cx="${100 + dx}" cy="${y}" rx="9" ry="14" transform="rotate(-30 ${100 + dx} ${y})" fill="${c.body}" stroke="${c.line}" stroke-width="4"/>`;
+  }
+  // ears or antennae from teen up
   if (stage >= 2) {
-    const top = b.face - 62;
+    const top = b.top + 8;
     s += t.extra & 1
-      ? line(`M88 ${top + 10}L78 ${top - 20}M112 ${top + 10}L122 ${top - 20}`) +
-        [78, 122].map((x) => `<circle cx="${x}" cy="${top - 22}" r="7" fill="hsl(${(t.hue + 150) % 360} 80% 60%)" stroke="${INK}" stroke-width="4"/>`).join('')
-      : `<path d="M58 ${top + 30}L62 ${top - 8}L90 ${top + 14}ZM142 ${top + 30}L138 ${top - 8}L110 ${top + 14}Z" fill="${c.dark}" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>`;
+      ? stroke(`M88 ${top + 6}Q84 ${top - 14} 78 ${top - 24}M112 ${top + 6}Q116 ${top - 14} 122 ${top - 24}`, c.line, 4) +
+        [78, 122].map((x) => `<circle cx="${x}" cy="${top - 26}" r="7.5" fill="hsl(${(t.hue + 150) % 360} 80% 66%)" stroke="${c.line}" stroke-width="4"/>`).join('')
+      : `<path d="M62 ${top + 26}Q58 ${top - 10} 66 ${top - 14}Q80 ${top - 4} 90 ${top + 8}ZM138 ${top + 26}Q142 ${top - 10} 134 ${top - 14}Q120 ${top - 4} 110 ${top + 8}Z" fill="${c.dark}" stroke="${c.line}" stroke-width="4" stroke-linejoin="round"/>` +
+        `<path d="M66 ${top + 14}Q65 ${top - 2} 69 ${top - 5}Q77 ${top} 82 ${top + 6}ZM134 ${top + 14}Q135 ${top - 2} 131 ${top - 5}Q123 ${top} 118 ${top + 6}Z" fill="hsl(350 80% 80%)"/>`;
   }
   if (form === 'cuddly') s += shapes(b, `fill="${c.body}" stroke="${c.body}" stroke-width="16" stroke-dasharray="1.5 8" stroke-linecap="round"`);
-  if (form === 'radiant') s += `<circle cx="100" cy="${b.face + 10}" r="92" fill="url(#${id}g)"/>`;
+  if (form === 'radiant') s += `<circle cx="100" cy="${b.face + 8}" r="96" fill="url(#${id}g)"/>`;
   return s;
 }
 
-function front(stage, t, b, c, form, mood) {
-  const f = b.face;
+function front(stage, t, b, c, form, mood, k) {
+  const F = b.face;
   let s = '';
-  if (form === 'cuddly') s += heart(64, f + 14, 7, 'hsl(345 90% 66%)') + heart(136, f + 14, 7, 'hsl(345 90% 66%)');
-  else if (stage >= 3 || t.extra & 2) s += `<ellipse cx="66" cy="${f + 14}" rx="9" ry="5" fill="hsl(350 90% 70% / .7)"/><ellipse cx="134" cy="${f + 14}" rx="9" ry="5" fill="hsl(350 90% 70% / .7)"/>`;
-  if (stage >= 4 && form !== 'grumpy' && mood !== 'asleep') s += line(`M68 ${f - 18}q12 -8 24 0M108 ${f - 18}q12 -8 24 0`, 6, 'stroke="#fff"').replace(`stroke="${INK}" `, '');
-  if (form === 'grumpy') s += line(`M84 ${b.top + 4}l6 -14l5 12l6 -16l5 14l6 -12l4 14`, 4);
+  if (form === 'cuddly') s += heart(62, F + 15, 7, 'hsl(345 90% 70%)') + heart(138, F + 15, 7, 'hsl(345 90% 70%)');
+  else if (mood !== 'dead') s += `<ellipse cx="58" cy="${F + 17}" rx="${9 * k}" ry="${5.5 * k}" fill="hsl(350 95% 72% / .6)"/><ellipse cx="142" cy="${F + 17}" rx="${9 * k}" ry="${5.5 * k}" fill="hsl(350 95% 72% / .6)"/>`;
+  if (stage >= 4) {
+    // elders get round glasses and bushy white brows
+    if (mood !== 'asleep') s += `<g fill="none" stroke="${c.line}" stroke-width="3.2"><circle cx="80" cy="${F}" r="17"/><circle cx="120" cy="${F}" r="17"/><path d="M97 ${F - 2}q3 -3 6 0"/></g>`;
+    if (form !== 'grumpy') s += stroke(`M70 ${F - 22}q12 -8 24 0M106 ${F - 22}q12 -8 24 0`, '#fff', 6);
+  }
+  if (form === 'grumpy') s += stroke(`M86 ${b.top + 4}l5 -13l5 11l5 -15l5 13l5 -11l4 13`, c.line, 4);
   return s;
 }
 
-function sprout(hue) {
-  return line('M100 58V36') +
-    `<path d="M100 40C88 22 70 24 66 30C76 42 92 44 100 40Z" fill="hsl(${(hue + 100) % 360} 60% 50%)" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>`;
+function sprout(c) {
+  return stroke('M100 62V40', c.line, 4) +
+    `<path d="M100 44C90 24 70 24 64 32C74 46 92 48 100 44Z" fill="hsl(125 50% 52%)" stroke="${c.line}" stroke-width="4" stroke-linejoin="round"/>` +
+    stroke('M96 42C88 36 80 33 72 33', 'hsl(125 55% 70%)', 2.5);
 }
 
 /** Things that float above the scaled body (so they don't shrink with it). */
@@ -112,7 +125,7 @@ function overlay(st, b, sc, form) {
   const headY = 184 - (184 - b.top) * sc;
   let s = '';
   if (form === 'radiant')
-    s += `<g class="halo"><ellipse cx="100" cy="${headY - 16}" rx="28" ry="7" fill="none" stroke="${INK}" stroke-width="9"/><ellipse cx="100" cy="${headY - 16}" rx="28" ry="7" fill="none" stroke="#ffd34d" stroke-width="5"/></g>`;
+    s += `<g class="halo"><ellipse cx="100" cy="${headY - 18}" rx="28" ry="7" fill="none" stroke="#8a6a12" stroke-width="9"/><ellipse cx="100" cy="${headY - 18}" rx="28" ry="7" fill="none" stroke="#ffd34d" stroke-width="5"/></g>`;
   if (st.shiny || form === 'radiant')
     s += star(40, 70, 8, '#fff6c2', 'twinkle') + star(164, 98, 6, '#fff6c2', 'twinkle t2') + star(150, 40, 5, '#fff6c2', 'twinkle t3');
   if (st.mood === 'asleep')
@@ -132,8 +145,9 @@ export function petSVG(p, st) {
   const c = colours(t, form);
   const id = `f${++uid}`;
   const sc = SCALE[st.stage];
-  const sick = st.sick ? `<g opacity=".55">${shapes(b, 'fill="hsl(95 60% 45%)"')}</g>` : '';
-  const dirt = st.needs && st.needs.clean < 40 ? `<g fill="hsl(30 40% 30% / .55)"><circle cx="58" cy="150" r="6"/><circle cx="70" cy="160" r="3.5"/><circle cx="140" cy="154" r="5"/></g>` : '';
+  const k = 1 + (1 - sc) * 0.9; // little ones get relatively bigger eyes
+  const sick = st.sick ? `<g opacity=".45">${shapes(b, 'fill="hsl(95 60% 45%)"')}</g>` : '';
+  const dirt = st.needs && st.needs.clean < 40 ? `<g fill="hsl(30 40% 30% / .5)"><circle cx="58" cy="152" r="5.5"/><circle cx="68" cy="162" r="3"/><circle cx="142" cy="156" r="4.5"/></g>` : '';
   const sheen = st.shiny
     ? `<rect x="0" y="0" width="200" height="200" fill="url(#${id}r)" opacity=".38" style="mix-blend-mode:soft-light"/>` +
       `<rect x="0" y="0" width="200" height="200" fill="url(#${id}r)" opacity=".22"/>` +
@@ -145,22 +159,22 @@ export function petSVG(p, st) {
     <linearGradient id="${id}s" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
     <linearGradient id="${id}r" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff7ad9"/><stop offset=".35" stop-color="#7ad7ff"/><stop offset=".7" stop-color="#b6ff8a"/><stop offset="1" stop-color="#ffe066"/></linearGradient>
     <radialGradient id="${id}g"><stop offset=".55" stop-color="#ffe680" stop-opacity=".55"/><stop offset="1" stop-color="#ffe680" stop-opacity="0"/></radialGradient>
-    <radialGradient id="${id}h" cx=".35" cy=".3" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
   </defs>
-  <ellipse class="shadow" cx="100" cy="184" rx="58" ry="8" fill="var(--shadow)"/>
+  <ellipse class="shadow" cx="100" cy="183" rx="${50 * sc}" ry="6" fill="var(--shadow)"/>
   <g class="bob"><g class="squish"><g transform="translate(100 184) scale(${sc}) translate(-100 -184)">
     ${behind(st.stage, t, b, c, form, id)}
-    ${t.body === 3 ? sprout(t.hue) : ''}
-    ${shapes(b, `fill="${c.body}" stroke="${INK}" stroke-width="${b.circles ? 8 : 4}"`)}
+    ${t.body === 3 ? sprout(c) : ''}
+    ${shapes(b, `fill="${c.body}" stroke="${c.line}" stroke-width="${b.circles ? 8 : 4}"`)}
     ${b.circles ? shapes(b, `fill="${c.body}"`) : ''}
     <g clip-path="url(#${id})">
-      ${pattern(t.pattern, c, b.face)}
-      <ellipse cx="100" cy="${b.face + 60}" rx="80" ry="30" fill="#000" opacity=".08"/>
-      <rect x="0" y="0" width="200" height="200" fill="url(#${id}h)"/>
+      ${markings(t.pattern, c, b)}
+      <ellipse cx="100" cy="184" rx="96" ry="34" fill="${c.dark}" opacity=".22"/>
+      <ellipse cx="72" cy="${b.top + 30}" rx="15" ry="8" transform="rotate(-28 72 ${b.top + 30})" fill="#fff" opacity=".55"/>
+      <circle cx="58" cy="${b.top + 48}" r="3.2" fill="#fff" opacity=".5"/>
       ${sick}${dirt}${sheen}
     </g>
-    ${front(st.stage, t, b, c, form, st.mood)}
-    <g class="face">${eyes(t.eyes, st.mood, b.face, form)}${mouth(st.mood, b.face, form)}</g>
+    ${front(st.stage, t, b, c, form, st.mood, k)}
+    <g class="face">${eyes(t, st.mood, b.face, form, k, c)}${mouth(t, st.mood, b.face, form)}</g>
   </g></g></g>
   ${overlay(st, b, sc, form)}
 </svg>`;
