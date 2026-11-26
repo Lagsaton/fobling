@@ -291,11 +291,11 @@ async function withFob(title, build, { write = true, allowUnreadable = false } =
     let busy = false;
     const done = new Promise((resolve, reject) => {
       sheet.onCancel = () => { ctrl.abort(); reject(new FobError('cancelled')); };
-      const handle = async (found) => {
+      const handle = async (found, msg) => {
         if (busy) return;
         busy = true;
         try {
-          const next = build(found);
+          const next = build(found, msg);
           if (write && next) {
             sheet.hint('Writing… keep holding it there');
             await reader.write({ records: [{ recordType: 'url', data: P.petUrl(BASE, next) }] });
@@ -305,7 +305,7 @@ async function withFob(title, build, { write = true, allowUnreadable = false } =
           reject(e);
         }
       };
-      reader.onreading = (ev) => handle(petFromMessage(ev.message));
+      reader.onreading = (ev) => handle(petFromMessage(ev.message), ev.message);
       reader.onreadingerror = () => {
         // Brand-new fobs sometimes aren't formatted yet; writing formats them.
         if (allowUnreadable) handle(null);
@@ -323,11 +323,27 @@ async function withFob(title, build, { write = true, allowUnreadable = false } =
   }
 }
 
+// Say what is actually on a fob that has no fobling, so a bad write is easy to spot.
+function describe(msg) {
+  const recs = msg?.records || [];
+  if (!recs.length) return 'The fob is empty.';
+  const r = recs[0];
+  let txt = '';
+  try {
+    if (['url', 'absolute-url', 'text'].includes(r.recordType) && r.data) txt = new TextDecoder(r.encoding || 'utf-8').decode(r.data);
+  } catch {
+    /* not text */
+  }
+  if (txt.length > 70) txt = `${txt.slice(0, 70)}…`;
+  const more = recs.length > 1 ? ` (+${recs.length - 1} more)` : '';
+  return `It holds a ${r.recordType} record${txt ? `: ${txt}` : ''}${more}.`;
+}
+
 function explain(e) {
   if (e instanceof FobError) {
     switch (e.code) {
       case 'cancelled': return null;
-      case 'blank': return 'That fob has no fobling on it.';
+      case 'blank': return `That fob has no fobling on it. ${e.detail || ''}`.trim();
       case 'cant': return e.detail;
       default: return e.message;
     }
@@ -346,8 +362,8 @@ async function care(action) {
   const input = document.getElementById('note');
   const note = input ? input.value.trim() : '';
   try {
-    const next = await withFob(`${P.ACTIONS[action].verb} ${pet.name}`, (found) => {
-      if (!found) throw new FobError('blank');
+    const next = await withFob(`${P.ACTIONS[action].verb} ${pet.name}`, (found, msg) => {
+      if (!found) throw new FobError('blank', describe(msg));
       if (!P.sameId(found, pet)) throw new FobError('other', found);
       const t = now();
       const c = P.canAct(found, action, t);
@@ -370,8 +386,9 @@ async function care(action) {
 
 async function scan() {
   try {
-    const found = await withFob('Scan a fob', (f) => f, { write: false });
-    if (!found) return toast('No fobling on that fob.', { label: 'Hatch one', run: () => commit(null) });
+    let seen = '';
+    const found = await withFob('Scan a fob', (f, msg) => ((seen = describe(msg)), f), { write: false });
+    if (!found) return toast(`No fobling on that fob. ${seen}`, { label: 'Hatch one', run: () => commit(null) });
     commit(found);
   } catch (e) {
     const msg = explain(e);
