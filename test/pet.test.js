@@ -7,11 +7,12 @@ const T0 = P.nowMin(Date.UTC(2026, 10, 26, 12, 0));
 const H = 60;
 const fresh = (over = {}) => ({ ...P.hatch('Bob', T0, 1, { seed: 1234, rand: () => 0.5 }), ...over });
 
-// The real v1 URL hatched on the owner's fob, before this format change.
+// Real links from the owner's fob in older formats.
 const V1_HASH = 'AYsCAcir2QAAAAAAAAAAAAAAAAF0AAZQaWNrbGUAug';
+const V2_HASH = '~~~~~~~~~~~AosCAcir2QACJQACJQAAAAAUAAF0AAEAAAAAKQZQaWNrbGUAVQ';
 
-test('v2 round-trips every field', () => {
-  const p = fresh({ xp: 377, hands: 9, note: 'feed me pls', noteBy: 7, gen: 3, neglect: 4, shiny: true, form: 2, inherited: 3, cntBase: 0x37 });
+test('v3 round-trips every field', () => {
+  const p = fresh({ xp: 377, hands: 9, note: 'feed me pls', noteBy: 7, gen: 3, neglect: 4, shiny: true, form: 2, inherited: 3, battled: T0 + 40 * H, wins: 7, losses: 2 });
   p.fed = T0 + 5 * H; p.play = T0 + 3 * H; p.wash = T0 + 1;
   assert.deepEqual(P.decodeState(P.encodeState(p)), p);
 });
@@ -21,12 +22,26 @@ test('old v1 fobs still load, with sensible defaults', () => {
   assert.equal(pet.name, 'Pickle');
   assert.equal(pet.version, 1);
   assert.equal(pet.gen, 1);
-  assert.equal(pet.cntBase, P.NO_BASE);
+  assert.equal(pet.battled, 0);
+  assert.equal(pet.wins, 0);
   assert.equal(counter, null);
   assert.equal(mirror, 'legacy');
   // the first write upgrades it
   const q = P.applyAction(pet, 'feed', pet.born + 15 * H, 9);
-  assert.equal(P.parseHash(P.hashFor(q)).pet.version, 2);
+  assert.equal(P.parseHash(P.hashFor(q)).pet.version, 3);
+});
+
+test('old v2 fobs still load and upgrade to v3', () => {
+  const { pet } = P.parseHash(V2_HASH);
+  assert.equal(pet.name, 'Pickle');
+  assert.equal(pet.version, 2);
+  assert.equal(pet.xp, 20);
+  assert.equal(pet.wins, 0);
+  const q = P.applyAction(pet, 'feed', pet.born + 30 * H, 9);
+  const back = P.parseHash(P.hashFor(q)).pet;
+  assert.equal(back.version, 3);
+  assert.equal(back.name, 'Pickle');
+  assert.equal(back.xp, q.xp);
 });
 
 test('links with an old counter stamped in still load', () => {
@@ -57,7 +72,7 @@ test('worst-case URL fits on an NTAG213', () => {
   const note = P.fitNote(BASE, p, 'ЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩ');
   const url = P.petUrl(BASE, { ...p, note });
   assert.ok(url.length <= P.URL_BUDGET, `${url.length} chars`);
-  assert.ok(P.byteLen(note) >= 14, `note squeezed to ${P.byteLen(note)} bytes`);
+  assert.ok(P.byteLen(note) >= 10, `note squeezed to ${P.byteLen(note)} bytes`);
 });
 
 test('egg, then hatches, then needs drain', () => {
@@ -143,4 +158,46 @@ test('traits stay in range', () => {
     const t = P.traits(s);
     assert.ok(t.body < 4 && t.eyes < 4 && t.pattern < 4 && t.hue >= 0 && t.hue < 360);
   }
+});
+
+test('mini-game score scales the xp', () => {
+  const p = fresh();
+  assert.equal(P.applyAction(p, 'feed', T0 + 15 * H, 1, '', { mult: 2 }).xp, 20);
+  assert.equal(P.applyAction(p, 'feed', T0 + 15 * H, 1, '', { mult: 0.5 }).xp, 5);
+  assert.equal(P.applyAction(p, 'play', T0 + 15 * H, 1, '', { mult: 1, bonus: 2 }).xp, 20, 'snow day');
+});
+
+test('battles: type edge, power, rest, and the record', () => {
+  // seeds pick the body: 0 blob, 1 bean, 2 puff, 3 sprout
+  const blob = fresh({ seed: 0 }), bean = fresh({ seed: 1 }), sprout = fresh({ seed: 3 });
+  assert.equal(P.typeEdge(blob, bean), 1.25);
+  assert.equal(P.typeEdge(bean, blob), 0.8);
+  assert.equal(P.typeEdge(sprout, blob), 1.25, 'sprout beats blob, closing the circle');
+  assert.equal(P.typeEdge(blob, fresh({ seed: 2 })), 1);
+  const at = T0 + 30 * H;
+  const young = P.fighter(fresh({ xp: 0, fed: at - H }), at);
+  const old = P.fighter(fresh({ xp: 300, born: at - 200 * H, fed: at - H, play: at - H, wash: at - H }), at);
+  assert.ok(old.power > young.power && old.hp > young.hp);
+  assert.equal(P.canBattle(fresh(), T0 + 2).ok, false, 'eggs cannot fight');
+  const won = P.applyBattle(fresh(), true, at, 1);
+  assert.equal(won.wins, 1);
+  assert.equal(won.xp, 25);
+  assert.equal(won.play, at, 'a battle counts as play');
+  assert.equal(P.canBattle(won, at + 30).ok, false, 'resting');
+  assert.equal(P.canBattle(won, at + P.BATTLE_REST_MIN).ok, true);
+  const lost = P.applyBattle(won, false, at + 90, 1);
+  assert.deepEqual([lost.wins, lost.losses, lost.xp], [1, 1, 31]);
+  assert.deepEqual(P.decodeState(P.encodeState(lost)).losses, 1);
+});
+
+test('outfits follow the calendar and its age', () => {
+  const p = fresh();
+  const at = (y, mo, d, h = 12) => { const date = new Date(y, mo, d, h); return [P.nowMin(date.getTime()), date]; };
+  const [dec, decD] = at(2026, 11, 5);
+  assert.equal(P.outfitFor({ ...p, born: dec - 3 * 1440 }, dec, decD), 'santa');
+  const [oct, octD] = at(2026, 9, 28);
+  assert.equal(P.outfitFor({ ...p, born: oct - 3 * 1440 }, oct, octD), 'pumpkin');
+  const [jun, junD] = at(2026, 5, 10);
+  assert.equal(P.outfitFor({ ...p, born: jun - 3 * 1440 }, jun, junD), '');
+  assert.equal(P.outfitFor({ ...p, born: jun - 14 * 1440 - 30 }, jun, junD), 'party', 'two weeks old today');
 });

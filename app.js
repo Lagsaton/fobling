@@ -2,6 +2,28 @@ import * as P from './pet.js';
 import { petSVG, eggSVG, ICONS, esc, STAGE_NAMES } from './render.js';
 import { ceremony } from './ceremony.js';
 import * as S from './sound.js';
+import { battle } from './battle.js';
+import { playGame } from './games.js';
+import * as W from './weather.js';
+
+// Instant updates: GitHub Pages lets phones cache files for 10 minutes. If a newer
+// version has been published, hop onto it (once per session, so it can't loop).
+(async () => {
+  try {
+    const mine = new URL(import.meta.url).searchParams.get('v');
+    if (!mine) return;
+    const r = await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' });
+    const latest = (await r.json()).v;
+    if (latest && latest !== mine && sessionStorage.getItem('fobling.hop') !== latest) {
+      sessionStorage.setItem('fobling.hop', latest);
+      const u = new URL(location.href);
+      u.searchParams.set('u', latest);
+      location.replace(u.toString());
+    }
+  } catch {
+    /* offline or private mode: carry on with this version */
+  }
+})();
 
 const params = new URLSearchParams(location.search);
 const SIM = params.has('sim'); // fake taps, for trying it on a computer
@@ -13,6 +35,8 @@ const NEED_LABEL = { food: 'Food', fun: 'Fun', clean: 'Clean' };
 const NEED_WANT = { food: 'food', fun: 'fun', clean: 'a wash' };
 const ACT_FOR = { food: 'feed', fun: 'play', clean: 'wash' };
 const ACT_LABEL = { feed: 'Feed', play: 'Play', wash: 'Wash' };
+const SWORDS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3l10 10M3 4l10 10M20 3L10 13M21 4L11 14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M6 16l2 2M16 18l2-2M5 19l2-2M17 17l2 2" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>';
+const CAMERA = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
 const rand16 = () => Math.floor(Math.random() * 65536);
 
 const app = document.getElementById('app');
@@ -53,6 +77,10 @@ let previewSeed = rand16();
 let legacy = null; // a dead pet whose fob we're about to hatch on
 let legacyTrait = 0;
 let ceremonyOpen = false;
+let wx = null; // { kind, windy, temp } when weather is on
+let dizzyUntil = 0;
+const WX_TEST = params.get('weather'); // ?weather=snow to try a look
+if (WX_TEST && W.WEATHER[WX_TEST]) wx = { kind: WX_TEST, windy: params.has('windy'), temp: 0 };
 // ?sim: a pretend fob, so the whole flow can be tried on a computer
 let simFob = null;
 
@@ -98,7 +126,25 @@ function timeOfDay(d = new Date(now() * 60000)) {
   if (h >= 18) return 'dusk';
   return 'day';
 }
-const sky = () => `<div class="sky" aria-hidden="true"><i class="sun"></i><i class="stars"></i><i class="hill"></i></div>`;
+const sky = () => `<div class="sky" aria-hidden="true"><i class="sun"></i><i class="stars"></i><i class="clouds"></i><i class="hill"></i><i class="precip"></i><i class="fog"></i><i class="flash"></i></div>`;
+
+function windowClass() {
+  return `window sky-${timeOfDay()}${wx ? ` w-${wx.kind}` : ''}${wx?.windy ? ' windy' : ''}`;
+}
+function moonShift() {
+  const p = W.moonPhase(new Date(now() * 60000));
+  return p <= 0.5 ? 2 + (p / 0.5) * 28 : -26 + ((p - 0.5) / 0.5) * 28;
+}
+
+/** The status, dressed for today: weather, outfit, and any dizziness. */
+function dressed(st) {
+  if (st.dead || st.egg) return st;
+  const d = { ...st, weather: wx?.kind || '', hat: P.outfitFor(pet, now()) };
+  if (Date.now() < dizzyUntil) d.mood = 'dizzy';
+  else if (d.weather === 'storm' && st.mood !== 'asleep' && st.mood !== 'starving') d.mood = 'scared';
+  return d;
+}
+const snowDay = () => wx?.kind === 'snow';
 
 function moodLine(st) {
   const lowest = ['food', 'fun', 'clean'].reduce((a, b) => (st.needs[a] <= st.needs[b] ? a : b));
@@ -109,7 +155,11 @@ function moodLine(st) {
     case 'asleep': return `Fast asleep${sick}`;
     case 'miserable': return `Really needs ${NEED_WANT[lowest]}${sick}`;
     case 'meh': return `Could use ${NEED_WANT[lowest]}${sick}`;
+    case 'dizzy': return 'Whoa… everything is spinning';
+    case 'scared': return `Hates thunder${sick}`;
     default: {
+      const wxLine = { rain: 'Staying dry under a leaf', snow: 'Loves the snow', hot: 'Too hot to move', fog: 'Can’t see a thing', cloudy: '' }[wx?.kind];
+      if (wxLine) return wxLine + sick;
       const lines = st.form === 'grumpy'
         ? ['Tolerating you', 'Fine. Whatever.', 'Not impressed']
         : ['Vibing', 'Content', 'Very pleased with itself', 'Doing great', 'Chilling on your keys'];
@@ -124,10 +174,11 @@ function chips(st) {
   if (st.form) c.push(`<span class="chip form-chip ${st.form}">${st.form}</span>`);
   if (pet.gen > 1) c.push(`<span class="chip">gen ${pet.gen}</span>`);
   if (pet.shiny && !st.egg) c.push(`<span class="chip shiny-chip">${ICONS.spark} shiny</span>`);
+  if (wx && !st.egg) c.push(`<span class="chip wx-chip">${W.WEATHER[wx.kind].icon} ${W.WEATHER[wx.kind].label}${snowDay() ? ' · 2× play xp' : ''}</span>`);
   return c.join('');
 }
 
-const chipKey = (st) => `${st.egg}|${st.stage}|${st.form}`;
+const chipKey = (st) => `${st.egg}|${st.stage}|${st.form}|${wx?.kind}`;
 
 // A fob still running an old counter/serial mirror: offer the fix.
 function mirrorLine() {
@@ -156,9 +207,14 @@ function actionsHTML() {
     const c = P.canAct(pet, a, t);
     const off = !CAN_TAP || !c.ok;
     return `<button class="act act-${k}" data-act="${a}" ${off ? 'disabled' : ''}>
-      ${ICONS[k]}<span>${ACT_LABEL[a]}</span><small>${c.ok ? (CAN_TAP ? 'tap fob' : '—') : c.reason}</small>
+      ${ICONS[k]}<span>${ACT_LABEL[a]}</span><small>${c.ok ? (CAN_TAP ? 'play & tap' : '—') : c.reason}</small>
     </button>`;
-  }).join('');
+  }).join('') + battleButton(t);
+}
+
+function battleButton(t) {
+  const c = P.canBattle(pet, t);
+  return `<button class="act act-battle" data-do="battle" ${!CAN_TAP || !c.ok ? 'disabled' : ''}>${SWORDS}<span>Battle</span><small>${c.ok ? 'tap a rival’s fob' : c.reason}</small></button>`;
 }
 
 function statsHTML(st) {
@@ -180,7 +236,13 @@ function statsHTML(st) {
   }
   return `<div class="stat"><b>${P.fmtDuration(st.ageMin)}</b><span>old</span></div>
     <div class="stat"><b>${pet.hands}</b><span>${pet.hands === 1 ? 'phone' : 'phones'}</span></div>
-    <div class="stat"><b>${st.xp}</b><span>xp</span></div>${grow}${raise}`;
+    <div class="stat"><b>${st.xp}</b><span>xp</span></div>${grow}${raise}${record()}`;
+}
+
+function record() {
+  const w = pet.wins || 0;
+  const l = pet.losses || 0;
+  return w + l ? `<p class="grow">Battles: <b>${w}</b> ${w === 1 ? 'win' : 'wins'} · <b>${l}</b> ${l === 1 ? 'loss' : 'losses'}</p>` : '';
 }
 
 const noteMax = () => P.byteLen(P.fitNote(BASE, pet, 'x'.repeat(P.NOTE_MAX)));
@@ -197,18 +259,20 @@ function viewPet(st) {
   return `${header()}${banner()}
   <section class="card hero${pet.shiny ? ' is-shiny' : ''}">
     <div class="chips" id="chips" data-k="${chipKey(st)}">${chips(st)}</div>
-    <div class="window sky-${timeOfDay()}" id="stage">${sky()}<div class="petbox" id="petbox">${petSVG(pet, st)}</div></div>
+    <div class="${windowClass()}" id="stage" style="--moon-shift:${moonShift()}px">${sky()}<div class="petbox" id="petbox">${petSVG(pet, dressed(st))}</div></div>
     <h1>${esc(pet.name)}</h1>
-    <p class="mood" id="mood">${moodLine(st)}</p>
+    <p class="mood" id="mood">${moodLine(dressed(st))}</p>
     ${mirrorLine()}
+    ${!wx && !W.weatherOn() ? '<p class="wx-on"><button class="link" data-do="weather">☁️ Show the real weather here</button></p>' : ''}
   </section>
   <section class="card needs" id="needs">${needsHTML(st)}</section>
   <section class="actions" id="acts">${actionsHTML()}</section>
   ${noteIn}${note}
   <section class="card stats" id="stats">${statsHTML(st)}</section>
   <footer class="foot">
+    <button class="btn" data-do="photo">${CAMERA} Share a photo</button>
     ${CAN_TAP ? '<button class="btn" data-do="scan">Scan a different fob</button>' : ''}
-    <button class="btn quiet" data-do="new">Hatch a new fobling</button>
+    <button class="btn quiet" data-do="new">Start one on a blank fob</button>
   </footer>`;
 }
 
@@ -230,7 +294,7 @@ function viewGrave(st) {
     <b>Its line goes on.</b>
     <span>Hatch a new one on this fob and it becomes generation ${pet.gen + 1}, with one of ${esc(pet.name)}'s traits.</span>
   </section>
-  <footer class="foot"><button class="btn primary" data-do="heir">Hatch its descendant</button></footer>`;
+  <footer class="foot"><button class="btn primary" data-do="heir">Hatch its descendant</button><button class="btn" data-do="photo">${CAMERA} Share a memorial photo</button></footer>`;
 }
 
 function hatchPreviewSeed() {
@@ -304,9 +368,9 @@ function tick() {
   const box = document.getElementById('petbox');
   if (st.dead || !box) return render();
   if (document.getElementById('chips').dataset.k !== chipKey(st)) return render();
-  box.innerHTML = petSVG(pet, st);
-  document.getElementById('stage').className = `window sky-${timeOfDay()}`;
-  document.getElementById('mood').innerHTML = moodLine(st);
+  box.innerHTML = petSVG(pet, dressed(st));
+  document.getElementById('stage').className = windowClass();
+  document.getElementById('mood').innerHTML = moodLine(dressed(st));
   document.getElementById('needs').innerHTML = needsHTML(st);
   document.getElementById('acts').innerHTML = actionsHTML();
   document.getElementById('stats').innerHTML = statsHTML(st);
@@ -505,6 +569,17 @@ function blankError(msg, url) {
 async function care(action) {
   const input = document.getElementById('note');
   const note = input ? input.value.trim() : '';
+  const c0 = P.canAct(pet, action, now());
+  if (!c0.ok) return oops(c0.reason);
+  ceremonyOpen = true; // pause the background refresh while the game is up
+  let game;
+  try {
+    game = await playGame(action, pet, statusNow());
+  } finally {
+    ceremonyOpen = false;
+  }
+  const mult = game.skipped ? 1 : 0.5 + game.ratio * 1.5;
+  const bonus = action === 'play' && snowDay() ? 2 : 1;
   try {
     const { next, parsed } = await withFob(`${P.ACTIONS[action].verb} ${pet.name}`, (found, msg, url) => {
       if (!found) throw blankError(msg, url);
@@ -512,7 +587,7 @@ async function care(action) {
       const t = now();
       const c = P.canAct(found.pet, action, t);
       if (!c.ok) throw new FobError('cant', c.reason);
-      return P.applyAction(found.pet, action, t, carer(), note ? P.fitNote(BASE, found.pet, note) : '');
+      return P.applyAction(found.pet, action, t, carer(), note ? P.fitNote(BASE, found.pet, note) : '', { mult, bonus });
     });
     const before = P.status(parsed.pet, now());
     commit(next);
@@ -520,7 +595,7 @@ async function care(action) {
     burst(action);
     S.play(action);
     S.buzz([20, 40, 60]);
-    toast(`${P.ACTIONS[action].verb} ${next.name}  +${after.xp - before.xp} xp${note ? ' · note saved' : ''}`);
+    toast(`${P.ACTIONS[action].verb} ${next.name}  +${after.xp - before.xp} xp${bonus > 1 ? ' (snow day!)' : ''}${note ? ' · note saved' : ''}`);
   } catch (e) {
     if (e instanceof FobError && e.code === 'other') {
       const other = e.detail;
@@ -549,7 +624,7 @@ async function scan() {
   }
 }
 
-async function hatchFlow(force = false) {
+async function hatchFlow() {
   const name = (document.getElementById('name')?.value || '').trim();
   if (!name) {
     document.getElementById('name')?.focus();
@@ -560,7 +635,7 @@ async function hatchFlow(force = false) {
       const t = now();
       const old = found?.pet || null;
       const oldDead = old && P.status(old, t).dead;
-      if (old && !force && !oldDead) throw new FobError('occupied', old);
+      if (old && !oldDead) throw new FobError('occupied', old);
       const parent = oldDead ? old : null;
       const trait = parent && legacy && P.sameId(parent, legacy) ? legacyTrait : Math.floor(Math.random() * 4);
       return P.hatch(name, t, carer(), { seed: previewSeed, parent, trait });
@@ -574,10 +649,7 @@ async function hatchFlow(force = false) {
   } catch (e) {
     if (e instanceof FobError && e.code === 'occupied') {
       const f = e.detail;
-      if (confirm(`This fob already holds ${f.name}, alive and ${P.fmtDuration(now() - f.born)} old.\n\nReplace it? ${f.name} will be gone for good.`)) {
-        return hatchFlow(true);
-      }
-      return;
+      return oops(`That fob already holds ${f.name}, alive and well. A living fobling can’t be replaced, only succeeded once it’s gone.`, { label: `Open ${f.name}`, run: () => commit(f) });
     }
     fail(e);
   }
@@ -694,6 +766,9 @@ app.addEventListener('click', (e) => {
       b.setAttribute('aria-label', S.isMuted() ? 'Turn sound on' : 'Turn sound off');
       return S.play('poke');
     case 'doc-weird': return doctor('weird');
+    case 'battle': return battleFlow();
+    case 'photo': return sharePhoto();
+    case 'weather': return turnOnWeather();
     case 'reroll': {
       previewSeed = rand16();
       document.getElementById('eggbox').innerHTML = eggSVG(hatchPreviewSeed());
@@ -716,5 +791,115 @@ document.addEventListener('visibilitychange', () => {
 });
 setInterval(() => document.visibilityState === 'visible' && tick(), 30000);
 
+/* ---------- shake to make it dizzy ---------- */
+
+let lastShake = 0;
+let prevG = null;
+window.addEventListener('devicemotion', (e) => {
+  const g = e.accelerationIncludingGravity;
+  if (!g || g.x === null) return;
+  if (prevG) {
+    const jolt = Math.abs(g.x - prevG.x) + Math.abs(g.y - prevG.y) + Math.abs(g.z - prevG.z);
+    if (jolt > 32 && Date.now() - lastShake > 1500) {
+      lastShake = Date.now();
+      dizzy();
+    }
+  }
+  prevG = { x: g.x, y: g.y, z: g.z };
+});
+
+function dizzy() {
+  if (!pet || ceremonyOpen || document.querySelector('.bt, .g-overlay, .cere')) return;
+  const st = statusNow();
+  if (st.dead || st.egg) return;
+  const wasAsleep = st.mood === 'asleep';
+  dizzyUntil = Date.now() + 2600;
+  tick();
+  S.play('poke');
+  S.buzz([30, 30, 30, 30, 30]);
+  if (wasAsleep) toast(`You woke ${pet.name} up. Rude.`);
+  setTimeout(tick, 2700);
+}
+
+/* ---------- weather ---------- */
+
+async function turnOnWeather() {
+  try {
+    wx = await W.getWeather({ ask: true });
+    render();
+    if (wx) toast(`${W.WEATHER[wx.kind].icon} ${W.WEATHER[wx.kind].label} where you are, ${wx.temp}°C`);
+  } catch (e) {
+    oops(e?.code === 1 ? 'Location was blocked, so no weather. You can allow it in Chrome’s site settings.' : 'Couldn’t get the weather right now.');
+  }
+}
+
+function refreshWeather() {
+  if (WX_TEST || !W.weatherOn()) return;
+  W.getWeather().then((w) => {
+    if (w && (!wx || w.kind !== wx.kind || w.windy !== wx.windy)) {
+      wx = w;
+      render();
+    }
+  }).catch(() => {});
+}
+
+/* ---------- battles ---------- */
+
+async function battleFlow() {
+  const c = P.canBattle(pet, now());
+  if (!c.ok) return oops(c.reason);
+  let foe;
+  try {
+    ({ parsed: foe } = await withFob('Tap your rival’s fob', (found, msg, url) => {
+      if (!found) throw blankError(msg, url);
+      if (P.sameId(found.pet, pet)) throw new FobError('cant', 'That’s your own fob. Tap your rival’s.');
+      const fst = P.status(found.pet, now());
+      if (fst.dead) throw new FobError('cant', `${found.pet.name} has passed away.`);
+      if (fst.egg) throw new FobError('cant', `${found.pet.name} is still an egg.`);
+      return found;
+    }, { write: false }));
+  } catch (e) {
+    return fail(e);
+  }
+  ceremonyOpen = true;
+  let won;
+  try {
+    won = await battle(pet, foe.pet, now());
+  } finally {
+    ceremonyOpen = false;
+  }
+  if (won === null) return toast('You ran away. No harm done.');
+  try {
+    const { next } = await withFob(`Tap ${pet.name}’s fob to save`, (found, msg, url) => {
+      if (!found) throw blankError(msg, url);
+      if (!P.sameId(found.pet, pet)) throw new FobError('cant', `That’s not ${pet.name}’s fob. Tap your own to save.`);
+      return P.applyBattle(found.pet, won, now(), carer());
+    });
+    commit(next);
+    burst(won ? 'play' : 'heart', won ? 16 : 6);
+    S.play('saved');
+    S.buzz([20, 40, 60]);
+    toast(won ? `${next.name} won! ${next.wins} ${next.wins === 1 ? 'win' : 'wins'} so far.` : `${next.name} lost this one. Next time.`);
+  } catch (e) {
+    if (e instanceof FobError && e.code === 'cancelled') return toast('Result not saved.');
+    fail(e);
+  }
+}
+
+/* ---------- photo card ---------- */
+
+async function sharePhoto() {
+  try {
+    const { shareCard } = await import('./photo.js');
+    const st = statusNow();
+    const r = await shareCard(pet, { ...st, form: st.form });
+    if (r === 'downloaded') toast('Photo saved to your downloads.');
+  } catch (e) {
+    oops('Couldn’t make the photo.');
+  }
+}
+
 load();
 render();
+refreshWeather();
+setInterval(refreshWeather, 10 * 60 * 1000);

@@ -1,7 +1,7 @@
 // Fobling core: the pet's state, how it is packed into a URL, and how time treats it.
 // No DOM here, so it runs (and is tested) in Node too.
 
-export const VERSION = 2;
+export const VERSION = 3;
 export const NAME_MAX = 10; // bytes (UTF-8)
 export const NOTE_MAX = 20; // bytes (UTF-8)
 
@@ -14,7 +14,6 @@ export const URL_BUDGET = 134;
 // mirror still switched on stamps hex digits here, so those links must keep loading.
 export const SLOT = '~~~~~~~~~~~';
 const SLOT_LEN = SLOT.length;
-export const NO_BASE = 0xffffff;
 
 // Hours for each need to drain from full to empty.
 export const HOURS = { food: 20, fun: 16, clean: 30 };
@@ -95,7 +94,7 @@ function fromB64url(str) {
 }
 
 /*
- Binary layout, version 2 (big-endian):
+ Binary layout, version 3 (big-endian):
    0      version  u8
    1-2    seed     u16   looks
    3-6    born     u32   minutes since epoch
@@ -109,16 +108,19 @@ function fromB64url(str) {
    22     gen      u8    generation on this fob
    23     neglect  u8    times a need was left to run empty
    24     flags    u8    bit0 shiny, bits1-3 adult form, bits4-6 inherited trait + 1
-   25-27  cntBase  u24   fob tap counter when it hatched (NO_BASE = unknown)
-   28     nameLen  u8, then name bytes
+   25-27  battled  u24   minutes after born of the last battle (0 = never)
+   28     wins     u8
+   29     losses   u8
+   30     nameLen  u8, then name bytes
    ..     noteLen  u8, then note bytes
    last   checksum u8
+ Version 2 had bytes 25-27 as an unused tap-counter base, then name and note at 28.
  Version 1 was the same up to byte 21, then name and note.
 */
 export function encodeState(p) {
   const name = te.encode(clipBytes(p.name, NAME_MAX));
   const note = te.encode(clipBytes(p.note || '', NOTE_MAX));
-  const b = new Uint8Array(28 + 1 + name.length + 1 + note.length + 1);
+  const b = new Uint8Array(30 + 1 + name.length + 1 + note.length + 1);
   const dv = new DataView(b.buffer);
   let o = 0;
   b[o++] = VERSION;
@@ -135,20 +137,22 @@ export function encodeState(p) {
   b[o++] = clamp(p.gen, 1, 255);
   b[o++] = clamp(p.neglect, 0, 255);
   b[o++] = (p.shiny ? 1 : 0) | ((p.form & 7) << 1) | ((p.inherited & 7) << 4);
-  const base = clamp(p.cntBase, 0, NO_BASE);
-  b[o++] = base >> 16; b[o++] = (base >> 8) & 0xff; b[o++] = base & 0xff;
+  const fought = p.battled ? clamp(p.battled - p.born, 1, 0xffffff) : 0;
+  b[o++] = fought >> 16; b[o++] = (fought >> 8) & 0xff; b[o++] = fought & 0xff;
+  b[o++] = clamp(p.wins || 0, 0, 255);
+  b[o++] = clamp(p.losses || 0, 0, 255);
   b[o++] = name.length; b.set(name, o); o += name.length;
   b[o++] = note.length; b.set(note, o); o += note.length;
   b[o] = checksum(b.subarray(0, o));
   return toB64url(b);
 }
 
-/** Parse packed state (version 1 or 2). Throws on anything malformed. */
+/** Parse packed state (version 1, 2 or 3). Throws on anything malformed. */
 export function decodeState(str) {
   const b = fromB64url(str);
   if (b.length < 25) throw new Error('too short');
   const version = b[0];
-  if (version !== 1 && version !== 2) throw new Error('unknown version');
+  if (version < 1 || version > 3) throw new Error('unknown version');
   if (checksum(b.subarray(0, b.length - 1)) !== b[b.length - 1]) throw new Error('checksum');
   const dv = new DataView(b.buffer);
   const u24 = (o) => (b[o] << 16) | (b[o + 1] << 8) | b[o + 2];
@@ -169,18 +173,26 @@ export function decodeState(str) {
     shiny: false,
     form: 0,
     inherited: 0,
-    cntBase: NO_BASE,
+    battled: 0,
+    wins: 0,
+    losses: 0,
   };
   let o = 22;
-  if (version === 2) {
-    if (b.length < 32) throw new Error('too short');
+  if (version >= 2) {
+    if (b.length < (version === 3 ? 34 : 32)) throw new Error('too short');
     p.gen = b[22] || 1;
     p.neglect = b[23];
     p.shiny = !!(b[24] & 1);
     p.form = (b[24] >> 1) & 7;
     p.inherited = (b[24] >> 4) & 7;
-    p.cntBase = u24(25);
     o = 28;
+  }
+  if (version === 3) {
+    const fought = u24(25);
+    p.battled = fought ? born + fought : 0;
+    p.wins = b[28];
+    p.losses = b[29];
+    o = 30;
   }
   const nameLen = b[o++];
   if (nameLen > NAME_MAX) throw new Error('bad length');
@@ -346,13 +358,17 @@ export function canAct(p, action, now) {
   return { ok: true };
 }
 
-/** Returns a new pet with the action applied. Caller checks canAct first. */
-export function applyAction(p, action, now, carer, note = '') {
+/**
+ * Returns a new pet with the action applied. Caller checks canAct first.
+ * mult: how well the mini-game went (about 0.5-2). bonus: e.g. 2 on a snow day for play.
+ */
+export function applyAction(p, action, now, carer, note = '', { mult = 1, bonus = 1 } = {}) {
   const a = ACTIONS[action];
   const st = status(p, now);
   const level = st.needs[a.need];
   let gain = level < 60 ? 10 : 4;
   if (st.sick && action !== 'wash') gain = Math.ceil(gain / 2);
+  gain = Math.max(1, Math.round(gain * mult * bonus));
   const q = { ...p, version: VERSION, [a.key]: now, xp: Math.min(0xffff, p.xp + gain) };
   if (level === 0) q.neglect = Math.min(255, p.neglect + 1);
   if (carer !== p.carer) {
@@ -399,7 +415,9 @@ export function hatch(name, now, carer, { seed, parent = null, trait = 0, rand =
     shiny: rand() < 1 / SHINY_ODDS,
     form: 0,
     inherited,
-    cntBase: NO_BASE, // unused; kept so the format stays the same
+    battled: 0,
+    wins: 0,
+    losses: 0,
     name: clipBytes(name.trim() || 'Fob', NAME_MAX),
     note: '',
   };
@@ -413,4 +431,68 @@ export function fmtDuration(min) {
   if (d) return h ? `${d}d ${h}h` : `${d}d`;
   if (h) return m ? `${h}h ${m}m` : `${h}h`;
   return `${m}m`;
+}
+
+/* ---------- battles ---------- */
+
+export const BATTLE_REST_MIN = 60; // a pet can battle once an hour
+export const BODY_NAMES = ['blob', 'bean', 'puff', 'sprout'];
+const FORM_POWER = { classic: 2, cuddly: 3, grumpy: 4, radiant: 5 };
+
+/** Shapes go round in a circle: each beats the next one (blob > bean > puff > sprout > blob). */
+export function typeEdge(a, b) {
+  const ta = traits(a.seed).body;
+  const tb = traits(b.seed).body;
+  if ((ta + 1) % 4 === tb) return 1.25;
+  if ((tb + 1) % 4 === ta) return 0.8;
+  return 1;
+}
+
+/** How strong a pet is in a fight right now. */
+export function fighter(p, now) {
+  const st = status(p, now);
+  let power = 10 + st.stage * 6 + Math.min(p.xp, 600) / 30 + (FORM_POWER[st.form] || 0) + (p.shiny ? 1 : 0);
+  if (!st.dead && !st.egg && st.needs.food < 30) power *= 0.8;
+  if (st.sick) power *= 0.8;
+  return { power, hp: 30 + st.stage * 10, st };
+}
+
+export function canBattle(p, now) {
+  const st = status(p, now);
+  if (st.dead) return { ok: false, reason: 'Dead' };
+  if (st.egg) return { ok: false, reason: 'Still an egg' };
+  if (p.battled && now - p.battled < BATTLE_REST_MIN) return { ok: false, reason: `Resting ${fmtDuration(BATTLE_REST_MIN - (now - p.battled))}` };
+  return { ok: true };
+}
+
+/** Record a battle on your own pet. Winning pays more; both count as play. */
+export function applyBattle(p, won, now, carer) {
+  const q = { ...p, version: VERSION, battled: now, play: now, xp: Math.min(0xffff, p.xp + (won ? 25 : 6)) };
+  if (won) q.wins = Math.min(255, (p.wins || 0) + 1);
+  else q.losses = Math.min(255, (p.losses || 0) + 1);
+  if (carer !== p.carer) {
+    q.hands = Math.min(0xffff, p.hands + 1);
+    q.carer = carer;
+  }
+  if (!q.form && stageOf(q, now) >= ADULT) {
+    const live = needs(q, now);
+    q.form = formIndex(q.neglect + [live.food, live.fun, live.clean].filter((v) => v === 0).length, q.hands);
+  }
+  return q;
+}
+
+/* ---------- outfits ---------- */
+
+/**
+ * What it wears today: 'party' on every whole week of age (and New Year),
+ * 'santa' through December, 'pumpkin' the last week of October, else ''.
+ */
+export function outfitFor(p, now, date = new Date(now * 60000)) {
+  const days = Math.floor((now - p.born) / 1440);
+  const m = date.getMonth();
+  const d = date.getDate();
+  if ((days >= 7 && days % 7 === 0) || (m === 0 && d === 1) || (m === 11 && d === 31)) return 'party';
+  if (m === 11) return 'santa';
+  if (m === 9 && d >= 24) return 'pumpkin';
+  return '';
 }

@@ -49,6 +49,10 @@ function eyes(t, mood, F, form, k, c) {
   if (mood === 'asleep') return [L, R].map((x) => line(`M${x - 8} ${F + 1}q8 6 16 0`, 3.6)).join('');
   if (mood === 'dead') return [L, R].map((x) => line(`M${x - 6} ${F - 6}l12 12M${x + 6} ${F - 6}l-12 12`)).join('');
   const [rx, ry] = EYES[t.eyes].map((v) => v * k);
+  if (mood === 'dizzy') return [L, R].map((x) => line(`M${x} ${F}m-1 0a2 2 0 1 1 3 1a4.5 4.5 0 1 1 -6.5 -2a7 7 0 1 1 10 3.5`, 2.8)).join('');
+  if (mood === 'scared')
+    return [L, R].map((x) => `<ellipse cx="${x}" cy="${F}" rx="${rx * 1.05}" ry="${ry * 1.1}" fill="#fff" stroke="${INK}" stroke-width="3"/><circle cx="${x}" cy="${F + 1}" r="${rx * 0.32}" fill="${INK}"/>`).join('') +
+      line(`M${L - 9} ${F - ry - 5}l13 -6M${R + 9} ${F - ry - 5}l-13 -6`, 3.4);
   let s = '<g class="eyes">' + [L, R].map((x) =>
     `<ellipse cx="${x}" cy="${F}" rx="${rx}" ry="${ry}" fill="${INK}"/>` +
     `<circle cx="${x + rx * 0.3}" cy="${F - ry * 0.38}" r="${rx * 0.4}" fill="#fff"/>` +
@@ -69,6 +73,8 @@ function mouth(t, mood, F, form) {
         ? line(`M91 ${M}q4.5 5 9 0q4.5 5 9 0`, 3.4)
         : `<path d="M91 ${M - 1}Q100 ${M + 12} 109 ${M - 1}Z" fill="${INK}" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/><ellipse cx="100" cy="${M + 4}" rx="4" ry="2.2" fill="#ff8fa3"/>`;
     case 'meh': return line(`M95 ${M + 2}h10`, 3.4);
+    case 'dizzy': return line(`M90 ${M + 3}q2.5 -4 5 0t5 0t5 0t5 0`, 3);
+    case 'scared': return `<ellipse cx="100" cy="${M + 3}" rx="5" ry="4" fill="${INK}"/>`;
     case 'asleep': return `<ellipse cx="100" cy="${M + 1}" rx="2.6" ry="3" fill="${INK}"/>`;
     case 'dead': return line(`M91 ${M + 2}q4.5 -4 9 0t9 0`, 3.4);
     case 'starving': return `<ellipse cx="100" cy="${M + 3}" rx="4.5" ry="6" fill="${INK}"/>`;
@@ -118,6 +124,60 @@ function sprout(c) {
   return stroke('M100 62V40', c.line, 4) +
     `<path d="M100 44C90 24 70 24 64 32C74 46 92 48 100 44Z" fill="hsl(125 50% 52%)" stroke="${c.line}" stroke-width="4" stroke-linejoin="round"/>` +
     stroke('M96 42C88 36 80 33 72 33', 'hsl(125 55% 70%)', 2.5);
+}
+
+/* ---------- clothes and weather gear ---------- */
+
+const RED = '#e23b3b';
+
+function scarfBand(F) {
+  const y = F + 32;
+  return `<rect x="0" y="${y}" width="200" height="15" fill="${RED}"/>` +
+    [30, 62, 94, 126, 158].map((x) => `<rect x="${x}" y="${y}" width="9" height="15" fill="#fff" opacity=".85"/>`).join('');
+}
+
+function hat(kind, T, c, t) {
+  if (kind === 'santa')
+    return `<path d="M70 ${T + 14}C76 ${T - 22} 112 ${T - 44} 142 ${T - 26}C128 ${T - 14} 124 ${T - 2} 130 ${T + 14}Z" fill="${RED}" stroke="${c.line}" stroke-width="4" stroke-linejoin="round"/>` +
+      `<rect x="64" y="${T + 4}" width="72" height="15" rx="7.5" fill="#fff" stroke="${c.line}" stroke-width="4"/>` +
+      `<circle cx="143" cy="${T - 27}" r="9" fill="#fff" stroke="${c.line}" stroke-width="4"/>`;
+  if (kind === 'party')
+    return `<g transform="rotate(-14 100 ${T + 6})"><path d="M80 ${T + 10}L100 ${T - 42}L120 ${T + 10}Z" fill="#7ad7ff" stroke="${c.line}" stroke-width="4" stroke-linejoin="round"/>` +
+      `<circle cx="96" cy="${T - 8}" r="3.5" fill="#ff7ad9"/><circle cx="106" cy="${T - 22}" r="3" fill="#ffd34d"/><circle cx="104" cy="${T + 2}" r="3.5" fill="#ffd34d"/><circle cx="92" cy="${T + 4}" r="2.6" fill="#ff7ad9"/>` +
+      `<circle cx="100" cy="${T - 44}" r="7" fill="#ff7ad9" stroke="${c.line}" stroke-width="3.5"/></g>`;
+  if (kind === 'pumpkin')
+    return `<path d="M100 ${T - 18}q2 -10 8 -12" stroke="hsl(110 45% 35%)" stroke-width="5" fill="none" stroke-linecap="round"/>` +
+      `<ellipse cx="100" cy="${T - 2}" rx="25" ry="17" fill="#f28c28" stroke="${c.line}" stroke-width="4"/>` +
+      `<path d="M90 ${T - 17}q-6 15 0 31M110 ${T - 17}q6 15 0 31" stroke="#c96a14" stroke-width="3" fill="none"/>`;
+  if (kind === 'beanie') {
+    const col = `hsl(${(t.hue + 180) % 360} 60% 55%)`;
+    return `<path d="M64 ${T + 18}Q64 ${T - 30} 100 ${T - 30}Q136 ${T - 30} 136 ${T + 18}Z" fill="${col}" stroke="${c.line}" stroke-width="4" stroke-linejoin="round"/>` +
+      `<rect x="60" y="${T + 6}" width="80" height="16" rx="7" fill="${col}" stroke="${c.line}" stroke-width="4"/>` +
+      [72, 84, 96, 108, 120].map((x) => `<path d="M${x + 4} ${T + 9}v10" stroke="${c.line}" stroke-width="2" opacity=".35"/>`).join('') +
+      `<circle cx="100" cy="${T - 33}" r="9" fill="#fff" stroke="${c.line}" stroke-width="4"/>`;
+  }
+  return '';
+}
+
+function gear(st, b, c, t) {
+  const T = b.top;
+  const F = b.face;
+  let s = '';
+  if (st.weather === 'hot' && st.mood !== 'asleep' && st.mood !== 'dizzy')
+    s += `<g><rect x="61" y="${F - 10}" width="36" height="20" rx="9" fill="#1d1916"/><rect x="103" y="${F - 10}" width="36" height="20" rx="9" fill="#1d1916"/>` +
+      `<path d="M97 ${F - 3}h6M61 ${F - 6}l-12 -4M139 ${F - 6}l12 -4" stroke="#1d1916" stroke-width="3.5" stroke-linecap="round"/>` +
+      `<path d="M67 ${F - 4}l8 -4M109 ${F - 4}l8 -4" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".7"/></g>`;
+  if (st.weather === 'snow')
+    s += `<path d="M126 ${F + 40}l18 4l-6 32l-15 -3Z" fill="${RED}" stroke="${c.line}" stroke-width="3.5" stroke-linejoin="round"/><path d="M128 ${F + 54}l13 3" stroke="#fff" stroke-width="5" opacity=".85"/>`;
+  const wear = st.hat || (st.weather === 'snow' ? 'beanie' : '');
+  s += hat(wear, T, c, t);
+  if (st.weather === 'rain' && st.mood !== 'asleep') {
+    const y = T - 16;
+    s += `<g class="umbrella">${stroke(`M100 ${y}C104 ${y + 40} 120 ${F + 6} 146 ${F + 28}`, 'hsl(30 40% 35%)', 5)}` +
+      `<path d="M34 ${y}Q100 ${y - 66} 166 ${y}Q150 ${y - 9} 133 ${y}Q117 ${y - 9} 100 ${y}Q83 ${y - 9} 67 ${y}Q50 ${y - 9} 34 ${y}Z" fill="hsl(125 50% 50%)" stroke="${c.line}" stroke-width="4" stroke-linejoin="round"/>` +
+      stroke(`M100 ${y - 33}V${y}M100 ${y - 22}l-22 10M100 ${y - 22}l22 10M100 ${y - 10}l-34 8M100 ${y - 10}l34 8`, 'hsl(125 55% 72%)', 2.5) + '</g>';
+  }
+  return s;
 }
 
 /** Things that float above the scaled body (so they don't shrink with it). */
@@ -172,9 +232,11 @@ export function petSVG(p, st) {
       <ellipse cx="72" cy="${b.top + 30}" rx="15" ry="8" transform="rotate(-28 72 ${b.top + 30})" fill="#fff" opacity=".55"/>
       <circle cx="58" cy="${b.top + 48}" r="3.2" fill="#fff" opacity=".5"/>
       ${sick}${dirt}${sheen}
+      ${st.weather === 'snow' ? scarfBand(b.face) : ''}
     </g>
     ${front(st.stage, t, b, c, form, st.mood, k)}
     <g class="face">${eyes(t, st.mood, b.face, form, k, c)}${mouth(t, st.mood, b.face, form)}</g>
+    ${gear(st, b, c, t)}
   </g></g></g>
   ${overlay(st, b, sc, form)}
 </svg>`;
