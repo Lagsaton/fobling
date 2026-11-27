@@ -29,7 +29,7 @@ test('old v1 fobs still load, with sensible defaults', () => {
   assert.equal(P.parseHash(P.hashFor(q)).pet.version, 2);
 });
 
-test('the counter slot is read at either offset, and never touches the pet', () => {
+test('links with an old counter stamped in still load', () => {
   const p = fresh();
   const state = P.encodeState(p);
   assert.deepEqual(P.parseHash(P.SLOT + state), { pet: p, counter: null, mirror: 'off' });
@@ -58,14 +58,6 @@ test('worst-case URL fits on an NTAG213', () => {
   const url = P.petUrl(BASE, { ...p, note });
   assert.ok(url.length <= P.URL_BUDGET, `${url.length} chars`);
   assert.ok(P.byteLen(note) >= 14, `note squeezed to ${P.byteLen(note)} bytes`);
-});
-
-test('mirror command for this site', () => {
-  const m = P.mirrorSetup(BASE);
-  // "lagsaton.github.io/fobling/#" is 28 chars; 16 + 12 + 28 = 56 = page 14, byte 0
-  assert.equal(m.page, 14);
-  assert.equal(m.byte, 0);
-  assert.equal(m.command, 'A22984000EFF');
 });
 
 test('egg, then hatches, then needs drain', () => {
@@ -97,15 +89,6 @@ test('letting a need run empty counts as neglect', () => {
   assert.equal(P.status(q, T0 + 25 * H).neglect, 2, 'fun is still empty');
 });
 
-test('pats come from the tap counter and add xp', () => {
-  const p = fresh({ cntBase: 100 });
-  assert.equal(P.pats(p, 130), 30);
-  assert.equal(P.status(p, T0 + H, { counter: 130 }).xp, 30);
-  assert.equal(P.pats(fresh(), 130), 0, 'unknown base means no pats yet');
-  const q = P.applyAction(fresh(), 'feed', T0 + 15 * H, 1, '', 77);
-  assert.equal(q.cntBase, 77, 'the first write with a counter sets the base');
-});
-
 test('starves to death 48h after food runs out', () => {
   const p = fresh();
   const starving = P.status(p, T0 + 30 * H);
@@ -129,7 +112,7 @@ test('adult form follows upbringing and is locked on the first adult write', () 
   const cared = (over) => fresh({ xp: 300, fed: at - H, play: at - H, wash: at - H, ...over });
   assert.equal(P.status(cared({ neglect: 0 }), at).form, 'radiant');
   assert.equal(P.status(cared({ neglect: 7 }), at).form, 'grumpy');
-  assert.equal(P.status(cared({ neglect: 3, cntBase: 0 }), at, { counter: 50 }).form, 'cuddly');
+  assert.equal(P.status(cared({ neglect: 3, hands: 4 }), at).form, 'cuddly');
   assert.equal(P.status(cared({ neglect: 3 }), at).form, 'classic');
   assert.equal(P.status(fresh({ xp: 300 }), T0 + 30 * H).form, '', 'no form before adulthood');
   const locked = P.applyAction(cared({ neglect: 0, fed: at - 10 * H }), 'feed', at, 1);

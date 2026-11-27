@@ -46,7 +46,6 @@ function carer() {
 /* ---------- state ---------- */
 
 let pet = null; // the pet in the URL
-let counter = null; // the fob's tap counter, if the mirror is on
 let mirror = 'off'; // 'ok' | 'off' | 'weird' | 'legacy'
 let broken = false;
 let rawHash = '';
@@ -56,7 +55,6 @@ let legacyTrait = 0;
 let ceremonyOpen = false;
 // ?sim: a pretend fob, so the whole flow can be tried on a computer
 let simFob = null;
-let simCount = params.get('sim') === 'pats' ? 40 : null;
 
 function load() {
   try {
@@ -65,27 +63,24 @@ function load() {
     rawHash = location.hash.slice(1);
   }
   pet = null;
-  counter = null;
   mirror = 'off';
   broken = false;
   if (!rawHash) return;
   try {
-    ({ pet, counter, mirror } = P.parseHash(rawHash));
+    ({ pet, mirror } = P.parseHash(rawHash));
     if (SIM && !simFob) simFob = pet;
   } catch {
     broken = true;
   }
 }
 
-function commit(next, cnt = null) {
-  history.replaceState(null, '', next ? `#${P.hashFor(next, cnt)}` : location.pathname + location.search);
-  // our own tap isn't news, so don't celebrate it as a pat
-  if (next && cnt !== null) lsSet(`fobling.count.${P.petKey(next)}`, cnt);
+function commit(next) {
+  history.replaceState(null, '', next ? `#${P.hashFor(next)}` : location.pathname + location.search);
   load();
   render();
 }
 
-const statusNow = () => P.status(pet, now(), { counter });
+const statusNow = () => P.status(pet, now());
 
 /* ---------- views ---------- */
 
@@ -134,9 +129,9 @@ function chips(st) {
 
 const chipKey = (st) => `${st.egg}|${st.stage}|${st.form}`;
 
-function patsLine(st) {
-  if (mirror === 'ok') return `<p class="pats" id="pats">${ICONS.heart}<b>${st.pats}</b> ${st.pats === 1 ? 'pat' : 'pats'}</p>`;
-  if (mirror === 'weird') return `<p class="pats off"><button class="link" data-do="doc-weird">Something's stamping on the link. Fix it</button></p>`;
+// A fob still running an old counter/serial mirror: offer the fix.
+function mirrorLine() {
+  if (mirror === 'ok' || mirror === 'weird') return `<p class="pats off"><button class="link" data-do="doc-weird">Something's stamping on the link. Fix it</button></p>`;
   return '';
 }
 
@@ -179,9 +174,9 @@ function statsHTML(st) {
   }
   let raise = '';
   if (st.stage < P.ADULT) {
-    const f = P.forecastForm(st.neglect, st.pats);
+    const f = P.forecastForm(st.neglect, pet.hands);
     raise = `<p class="grow raise">Raised like this, it'll be a <b class="form-word ${f}">${f}</b> adult.
-      <span>Neglected ${st.neglect}×${st.neglect <= P.RADIANT_MAX ? ` (radiant allows ${P.RADIANT_MAX})` : st.neglect < P.GRUMPY_MIN ? ` (grumpy at ${P.GRUMPY_MIN})` : ''}${mirror === 'ok' && f !== 'radiant' && f !== 'grumpy' ? `, ${st.pats}/${P.CUDDLY_PATS} pats for cuddly` : ''}.</span></p>`;
+      <span>Neglected ${st.neglect}×${st.neglect <= P.RADIANT_MAX ? ` (radiant allows ${P.RADIANT_MAX})` : st.neglect < P.GRUMPY_MIN ? ` (grumpy at ${P.GRUMPY_MIN})` : ''}${f !== 'radiant' && f !== 'grumpy' ? `, ${pet.hands}/${P.CUDDLY_HANDS} phones for cuddly` : ''}.</span></p>`;
   }
   return `<div class="stat"><b>${P.fmtDuration(st.ageMin)}</b><span>old</span></div>
     <div class="stat"><b>${pet.hands}</b><span>${pet.hands === 1 ? 'phone' : 'phones'}</span></div>
@@ -199,22 +194,18 @@ function viewPet(st) {
         <input id="note" maxlength="${P.NOTE_MAX}" placeholder="optional, saved with your next tap" autocomplete="off">
         <small id="note-left">${noteMax()} bytes left</small></label>`
     : '';
-  const patsPromo = CAN_TAP && mirror !== 'ok' && mirror !== 'weird'
-    ? `<section class="card promo">${ICONS.heart}<div><b>Turn on pats</b><span>Every tap from any phone, even iPhones, counts as a pat and helps it grow.</span></div><button class="btn small" data-do="doc-pats">Set up</button></section>`
-    : '';
   return `${header()}${banner()}
   <section class="card hero${pet.shiny ? ' is-shiny' : ''}">
     <div class="chips" id="chips" data-k="${chipKey(st)}">${chips(st)}</div>
     <div class="window sky-${timeOfDay()}" id="stage">${sky()}<div class="petbox" id="petbox">${petSVG(pet, st)}</div></div>
     <h1>${esc(pet.name)}</h1>
     <p class="mood" id="mood">${moodLine(st)}</p>
-    ${patsLine(st)}
+    ${mirrorLine()}
   </section>
   <section class="card needs" id="needs">${needsHTML(st)}</section>
   <section class="actions" id="acts">${actionsHTML()}</section>
   ${noteIn}${note}
   <section class="card stats" id="stats">${statsHTML(st)}</section>
-  ${patsPromo}
   <footer class="foot">
     ${CAN_TAP ? '<button class="btn" data-do="scan">Scan a different fob</button>' : ''}
     <button class="btn quiet" data-do="new">Hatch a new fobling</button>
@@ -269,7 +260,6 @@ function viewHatch() {
       <li>Feeding, playing and washing write the new state back onto the fob, so you tap again to save.</li>
       <li>Food lasts ${P.HOURS.food}h, fun ${P.HOURS.fun}h, clean ${P.HOURS.clean}h. Once food runs out it has ${P.STARVE_GRACE_H}h before it dies.</li>
       <li>It grows through 5 stages. What kind of adult it becomes depends on how well it was raised.</li>
-      <li>With pats switched on, every tap from any phone counts, even iPhones.</li>
       <li>1 in ${P.SHINY_ODDS} hatch shiny.</li>
     </ul>
   </details>`;
@@ -296,7 +286,6 @@ function render() {
   const note = document.getElementById('note');
   if (note) note.addEventListener('input', updateNoteLeft);
   if (!st.dead) {
-    newPats();
     maybeCeremony(st);
   }
 }
@@ -323,22 +312,7 @@ function tick() {
   document.getElementById('stats').innerHTML = statsHTML(st);
 }
 
-/* ---------- moments: new pats, hatching, evolving ---------- */
-
-function newPats() {
-  if (counter === null) return;
-  const key = `fobling.count.${P.petKey(pet)}`;
-  const last = lsGet(key);
-  lsSet(key, counter);
-  if (last === null) return;
-  const n = counter - Number(last);
-  if (n <= 0) return;
-  setTimeout(() => {
-    burst('heart', n > 1 ? 14 : 8);
-    S.play('pat');
-    toast(n === 1 ? `You gave ${pet.name} a pat ♥` : `${pet.name} got ${n} pats since you last looked ♥`);
-  }, 350);
-}
+/* ---------- moments: hatching, evolving ---------- */
 
 // Plays the hatch / evolve animation the first time this phone sees the change,
 // and only while the page is actually on screen.
@@ -446,8 +420,7 @@ async function withFob(title, build, { write = true, allowUnreadable = false } =
         const t = setTimeout(res, 900);
         sheet.onCancel = () => { clearTimeout(t); rej(new FobError('cancelled')); };
       });
-      if (simCount !== null) simCount++;
-      const parsed = simFob ? { pet: simFob, counter: simCount, mirror: simCount === null ? 'off' : 'ok' } : null;
+      const parsed = simFob ? { pet: simFob, mirror: 'off' } : null;
       const next = build(parsed, null, null);
       if (write && next) simFob = next;
       return { next, parsed };
@@ -539,10 +512,10 @@ async function care(action) {
       const t = now();
       const c = P.canAct(found.pet, action, t);
       if (!c.ok) throw new FobError('cant', c.reason);
-      return P.applyAction(found.pet, action, t, carer(), note ? P.fitNote(BASE, found.pet, note) : '', found.counter);
+      return P.applyAction(found.pet, action, t, carer(), note ? P.fitNote(BASE, found.pet, note) : '');
     });
-    const before = P.status(parsed.pet, now(), { counter: parsed.counter });
-    commit(next, parsed.counter);
+    const before = P.status(parsed.pet, now());
+    commit(next);
     const after = statusNow();
     burst(action);
     S.play(action);
@@ -551,7 +524,7 @@ async function care(action) {
   } catch (e) {
     if (e instanceof FobError && e.code === 'other') {
       const other = e.detail;
-      return oops(`That fob holds ${other.pet.name}, not ${pet.name}.`, { label: `Open ${other.pet.name}`, run: () => commit(other.pet, other.counter) });
+      return oops(`That fob holds ${other.pet.name}, not ${pet.name}.`, { label: `Open ${other.pet.name}`, run: () => commit(other.pet) });
     }
     fail(e);
   }
@@ -570,7 +543,7 @@ async function scan() {
       return oops(`No fobling on that fob. ${seen}`, ours ? { label: 'Fix it', run: () => doctor('weird') } : { label: 'Hatch one', run: () => commit(null) });
     }
     S.play('saved');
-    commit(parsed.pet, parsed.counter);
+    commit(parsed.pet);
   } catch (e) {
     fail(e);
   }
@@ -590,11 +563,11 @@ async function hatchFlow(force = false) {
       if (old && !force && !oldDead) throw new FobError('occupied', old);
       const parent = oldDead ? old : null;
       const trait = parent && legacy && P.sameId(parent, legacy) ? legacyTrait : Math.floor(Math.random() * 4);
-      return P.hatch(name, t, carer(), { seed: previewSeed, parent, trait, counter: found?.counter ?? null });
+      return P.hatch(name, t, carer(), { seed: previewSeed, parent, trait });
     }, { allowUnreadable: true });
     previewSeed = rand16();
     legacy = null;
-    commit(next, parsed?.counter ?? null);
+    commit(next);
     S.play('saved');
     S.buzz([20, 40, 60]);
     toast(`${next.name} is on your keyring. Come back in ${P.EGG_MIN} minutes to watch it hatch.`);
@@ -615,35 +588,22 @@ async function hatchFlow(force = false) {
 const cmd = (c, why) => `<li><div class="cmd"><code>${c}</code><button class="copy" data-copy="${c}">copy</button></div><span>${why}</span></li>`;
 
 function doctor(kind) {
-  const m = P.mirrorSetup(BASE);
   const how = `<p class="doc-how">In <b>NFC Tools</b>: Other → <b>Advanced NFC commands</b>, set the tech to <b>NfcA</b>. Hold the fob still while you send each one.</p>`;
   const pw = `<p class="doc-note">IO failure? The fob has a password. Send <code>1BFFFFFFFF</code> (or your own password) first, then the command, without moving the fob.</p>`;
   let title = '';
   let body = '';
-  if (kind === 'pats') {
-    title = 'Turn on pats';
-    const firstSave = pet && pet.version === 1
-      ? `<p class="doc-warn">First feed, play or wash ${esc(pet.name)} once, so the fob gets the new link layout. If you do this before that, it will scramble the link.</p>`
-      : '';
-    body = `<p>Your fob has a built-in tap counter. These commands make the chip stamp that count into a spot in the link reserved for it. After that, every tap from any phone counts as a pat.</p>
-      ${firstSave}${how}<ol>
-      ${cmd('302A', 'Read the settings. It usually starts <code>00 05 00 00</code>.')}
-      ${cmd('A22A10050000', 'Switch the counter on. If step 1 didn’t start with 00 05 00 00, send <code>A22A10</code> plus bytes 2–4 from step 1.')}
-      ${cmd(m.command, 'Point the counter at the reserved spot. <code>0A</code> means it worked.')}
-      <li><span>Tap the fob to open it. You should see a ♥ pat count under its name.</span></li></ol>${pw}`;
-  } else if (kind === 'weird') {
+  if (kind === 'weird') {
     title = 'Something is stamping on the link';
-    body = `<p>A counter or serial-number “mirror” is switched on in the fob and is overwriting part of the link, usually left over from whoever set the fob up before. Switching it off brings the fobling back. Nothing is lost.</p>
+    body = `<p>A counter or serial-number “mirror” is switched on in the fob and is writing into the link, usually left over from an earlier setup. Switching it off brings the fobling back. Nothing is lost.</p>
       ${how}<ol>
       ${cmd('A229040000FF', 'Turn all mirrors off and keep the password off. <code>0A</code> means it worked.')}
-      <li><span>Tap the fob again. Once your fobling is back, you can set up pats properly.</span></li></ol>${pw}
-      <button class="btn" data-do="doc-pats">Set up pats instead</button>`;
+      <li><span>Tap the fob again. Your fobling should be back.</span></li></ol>${pw}`;
   } else {
     title = 'The fob won’t take the save';
     body = `<p>Usually the fob has a password or some of its memory is locked.</p>${how}<ol>
       ${cmd('3029', 'Look at the 4th byte. <code>FF</code> means no password. Anything else: a password guards the memory from that page on.')}
       ${cmd('1BFFFFFFFF', 'Unlock with the factory password. A 2-byte reply means unlocked. IO failure means it’s a different password.')}
-      ${cmd('A229040000FF', 'Straight after, without moving the fob: switch the password off. (This also turns pats off; set them up again after.)')}
+      ${cmd('A229040000FF', 'Straight after, without moving the fob: switch the password off.')}
       ${cmd('3002', 'If saving still fails: bytes 11–12 that aren’t <code>00 00</code> mean memory is permanently locked. That fob can’t be used, so try another.')}
       </ol>`;
   }
@@ -666,7 +626,6 @@ document.getElementById('doc').addEventListener('click', async (e) => {
       b.textContent = 'select it';
     }
   }
-  if (b?.dataset.do === 'doc-pats') doctor('pats');
 });
 
 /* ---------- little bits of feedback ---------- */
@@ -734,7 +693,6 @@ app.addEventListener('click', (e) => {
       b.innerHTML = S.isMuted() ? ICONS.mute : ICONS.sound;
       b.setAttribute('aria-label', S.isMuted() ? 'Turn sound on' : 'Turn sound off');
       return S.play('poke');
-    case 'doc-pats': return doctor('pats');
     case 'doc-weird': return doctor('weird');
     case 'reroll': {
       previewSeed = rand16();

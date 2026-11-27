@@ -9,10 +9,9 @@ export const NOTE_MAX = 20; // bytes (UTF-8)
 // "https://" to one byte, so a full URL of up to ~143 chars fits. Keep a margin.
 export const URL_BUDGET = 134;
 
-// The first 11 characters of the hash are reserved for the fob's tap counter.
-// With the counter mirror on, the chip stamps 6 hex digits into this slot every
-// time it is read. It lands at the start or 5 characters in, depending on how the
-// fob was formatted, so both are accepted and the pet data is never touched.
+// The first 11 characters of the hash are a reserved slot. An earlier version used it
+// for the fob's tap counter ("pats"); that feature is gone, but a fob with its counter
+// mirror still switched on stamps hex digits here, so those links must keep loading.
 export const SLOT = '~~~~~~~~~~~';
 const SLOT_LEN = SLOT.length;
 export const NO_BASE = 0xffffff;
@@ -40,11 +39,11 @@ export const FORM_TEXT = {
   classic: 'A classic adult. A solid, ordinary upbringing.',
   radiant: 'Radiant! Raised with almost no neglect.',
   grumpy: 'Grumpy. It remembers every missed meal.',
-  cuddly: 'Cuddly! Showered with pats.',
+  cuddly: 'Cuddly! Loved by lots of different phones.',
 };
 export const RADIANT_MAX = 1; // neglects allowed for radiant
 export const GRUMPY_MIN = 6; // neglects that make it grumpy
-export const CUDDLY_PATS = 40;
+export const CUDDLY_HANDS = 4; // different phones that cared for it
 export const SHINY_ODDS = 64;
 
 export const TRAIT_NAMES = ['shape', 'colour', 'eyes', 'pattern'];
@@ -232,23 +231,6 @@ export function stateFromUrl(url) {
   return i === -1 ? null : url.slice(i + 1);
 }
 
-/**
- * Where to point the fob's counter mirror so it lands in the slot.
- * Assumes the NFC stack kept the factory Lock Control TLV (5 bytes) in front of the
- * NDEF. If it didn't, the digits land 5 characters later, which parseHash accepts.
- */
-export function mirrorSetup(base) {
-  const rest = base.replace(/^https?:\/\//, '') + '#';
-  // page 4 starts at byte 16; then lock TLV (5); NDEF TLV tag+len (2);
-  // record header, type length, payload length, type 'U' (4); URI prefix code (1)
-  const addr = 16 + 5 + 2 + 4 + 1 + byteLen(rest);
-  const page = addr >> 2;
-  const byte = addr & 3;
-  const mirror = 0x80 | (byte << 4) | 0x04; // counter mirror, at that byte, keep STRG_MOD_EN
-  const h2 = (n) => n.toString(16).toUpperCase().padStart(2, '0');
-  return { page, byte, command: `A229${h2(mirror)}00${h2(page)}FF` };
-}
-
 /** Longest version of `note` that still keeps the URL inside the tag. */
 export function fitNote(base, p, note) {
   let n = clipBytes(note, NOTE_MAX);
@@ -276,11 +258,6 @@ export function inheritSeed(seed, parentSeed, trait) {
   return (seed & ~m & 0xffff) | (parentSeed & m);
 }
 
-export function pats(p, counter) {
-  if (counter === null || counter === undefined || p.cntBase === NO_BASE) return 0;
-  return Math.max(0, counter - p.cntBase);
-}
-
 export function needs(p, now) {
   const level = (last, h) => clamp(100 - ((now - last) / (h * 60)) * 100, 0, 100);
   const emptyIn = (last, h) => Math.max(0, last + h * 60 - now);
@@ -305,26 +282,25 @@ export function stageOf(p, now, xp = p.xp) {
   return s;
 }
 
-function formIndex(neglect, patCount) {
+function formIndex(neglect, hands) {
   if (neglect >= GRUMPY_MIN) return 3;
   if (neglect <= RADIANT_MAX) return 2;
-  if (patCount >= CUDDLY_PATS) return 4;
+  if (hands >= CUDDLY_HANDS) return 4;
   return 1;
 }
 
 /** What it would turn into if it became an adult right now. */
-export const forecastForm = (neglect, patCount) => FORMS[formIndex(neglect, patCount)];
+export const forecastForm = (neglect, hands) => FORMS[formIndex(neglect, hands)];
 
 /** Everything the UI needs to know about the pet right now. */
-export function status(p, now, { counter = null, date = new Date(now * 60000) } = {}) {
+export function status(p, now, { date = new Date(now * 60000) } = {}) {
   const ageMin = Math.max(0, now - p.born);
-  const patCount = pats(p, counter);
-  const xp = p.xp + patCount;
+  const xp = p.xp;
   const dies = deathAt(p);
-  const base = { pats: patCount, xp, ageMin, shiny: p.shiny };
+  const base = { xp, ageMin, shiny: p.shiny };
   if (now >= dies) {
     const stage = stageOf(p, dies, xp);
-    return { ...base, dead: true, livedMin: Math.max(0, dies - p.born), diedAt: dies, stage, form: formName(p, stage, p.neglect + 1, patCount) };
+    return { ...base, dead: true, livedMin: Math.max(0, dies - p.born), diedAt: dies, stage, form: formName(p, stage, p.neglect + 1) };
   }
   const n = needs(p, now);
   const egg = ageMin < EGG_MIN;
@@ -351,14 +327,14 @@ export function status(p, now, { counter = null, date = new Date(now * 60000) } 
     needs: n,
     stage,
     neglect: neglectNow,
-    form: formName(p, stage, neglectNow, patCount),
+    form: formName(p, stage, neglectNow),
     diesIn: n.food === 0 ? dies - now : null,
   };
 }
 
-function formName(p, stage, neglect, patCount) {
+function formName(p, stage, neglect) {
   if (stage < ADULT) return '';
-  return FORMS[p.form || formIndex(neglect, patCount)];
+  return FORMS[p.form || formIndex(neglect, p.hands)];
 }
 
 export function canAct(p, action, now) {
@@ -371,15 +347,14 @@ export function canAct(p, action, now) {
 }
 
 /** Returns a new pet with the action applied. Caller checks canAct first. */
-export function applyAction(p, action, now, carer, note = '', counter = null) {
+export function applyAction(p, action, now, carer, note = '') {
   const a = ACTIONS[action];
-  const st = status(p, now, { counter });
+  const st = status(p, now);
   const level = st.needs[a.need];
   let gain = level < 60 ? 10 : 4;
   if (st.sick && action !== 'wash') gain = Math.ceil(gain / 2);
   const q = { ...p, version: VERSION, [a.key]: now, xp: Math.min(0xffff, p.xp + gain) };
   if (level === 0) q.neglect = Math.min(255, p.neglect + 1);
-  if (q.cntBase === NO_BASE && counter !== null) q.cntBase = counter;
   if (carer !== p.carer) {
     q.hands = Math.min(0xffff, p.hands + 1);
     q.carer = carer;
@@ -389,11 +364,10 @@ export function applyAction(p, action, now, carer, note = '', counter = null) {
     q.noteBy = carer;
   }
   // The adult form is settled the first time it's cared for as an adult.
-  const patCount = pats(q, counter);
-  if (!q.form && stageOf(q, now, q.xp + patCount) >= ADULT) {
+  if (!q.form && stageOf(q, now, q.xp) >= ADULT) {
     const live = needs(q, now);
     const neglect = q.neglect + [live.food, live.fun, live.clean].filter((v) => v === 0).length;
-    q.form = formIndex(neglect, patCount);
+    q.form = formIndex(neglect, q.hands);
   }
   return q;
 }
@@ -402,7 +376,7 @@ export function applyAction(p, action, now, carer, note = '', counter = null) {
  * A fresh pet. `parent` (a dead pet from the same fob) makes it the next generation
  * and passes on one trait, `trait` (0-3).
  */
-export function hatch(name, now, carer, { seed, parent = null, trait = 0, counter = null, rand = Math.random } = {}) {
+export function hatch(name, now, carer, { seed, parent = null, trait = 0, rand = Math.random } = {}) {
   let s = seed ?? Math.floor(rand() * 65536);
   let inherited = 0;
   if (parent) {
@@ -425,7 +399,7 @@ export function hatch(name, now, carer, { seed, parent = null, trait = 0, counte
     shiny: rand() < 1 / SHINY_ODDS,
     form: 0,
     inherited,
-    cntBase: counter ?? NO_BASE,
+    cntBase: NO_BASE, // unused; kept so the format stays the same
     name: clipBytes(name.trim() || 'Fob', NAME_MAX),
     note: '',
   };

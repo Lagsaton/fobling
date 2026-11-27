@@ -24,12 +24,11 @@ iPhones can open the page (and see the pet) but can't write to the fob from a we
 ### Growing up, pats and generations
 
 - **Neglect** counts how often a need was left to run empty. An adult turns out *radiant*
-  (≤1 neglect), *grumpy* (6+), *cuddly* (40+ pats) or *classic*, settled the first time it's
-  cared for as an adult.
-- **Pats** use the NTAG213's built-in tap counter. With the counter mirror switched on, the chip
-  stamps its tap count into the first 11 characters of the hash on every read, so every tap from
-  any phone (iPhones too) counts as a pat and adds 1 xp. The app shows the exact NFC Tools
-  commands under *Turn on pats*.
+  (at most 1 neglect), *grumpy* (6+), *cuddly* (cared for by 4+ different phones) or *classic*,
+  settled the first time it's cared for as an adult.
+- The first 11 characters of the hash are a reserved slot. An earlier version stamped the fob's
+  tap counter there ("pats", since removed); links that still carry a stamped counter load fine,
+  and the app offers the NFC command to switch the mirror off.
 - **Generations**: hatch on a dead pet's fob and the new one is the next generation and inherits
   one of its traits. 1 in 64 hatch **shiny**.
 - Hatching and evolving play a full-screen animation the first time each phone opens the pet
