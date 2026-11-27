@@ -110,6 +110,47 @@ const SOUNDS = {
     [523, 659, 784].forEach((f) => tone(f, 0.9, { type: 'triangle', vol: 0.09 }));
     [1047, 1319, 1568, 2093].forEach((f, i) => tone(f, 0.25, { at: 0.12 + i * 0.07, type: 'sine', vol: 0.07 }));
   },
+  // mini-games (games.js)
+  tick() {
+    tone(880, 0.06, { type: 'square', vol: 0.04 });
+  },
+  go() {
+    tone(1047, 0.16, { type: 'square', vol: 0.045 });
+    tone(1568, 0.22, { at: 0.05, type: 'triangle', vol: 0.08 });
+  },
+  catch() {
+    tone(620, 0.08, { type: 'triangle', to: 1180, vol: 0.12 });
+    noise(0.03, { freq: 1800, vol: 0.18 });
+  },
+  yuck() {
+    tone(190, 0.24, { type: 'sawtooth', to: 110, vol: 0.07 });
+    noise(0.12, { freq: 500, vol: 0.25 });
+  },
+  kick() {
+    noise(0.04, { freq: 800, vol: 0.45 });
+    tone(160, 0.1, { to: 70, vol: 0.28 });
+    tone(880, 0.07, { at: 0.02, type: 'triangle', to: 1320, vol: 0.06 });
+  },
+  drop() {
+    tone(320, 0.28, { type: 'triangle', to: 120, vol: 0.12 });
+  },
+  scrub() {
+    noise(0.06, { freq: 2600 + Math.random() * 2000, vol: 0.1 });
+  },
+  sparkle() {
+    [1568, 2093, 2637].forEach((f, i) => tone(f, 0.14, { at: i * 0.05, vol: 0.06 }));
+  },
+  timeup() {
+    tone(784, 0.12, { type: 'square', vol: 0.045 });
+    tone(523, 0.22, { at: 0.12, type: 'square', vol: 0.045 });
+  },
+  tada() {
+    [523, 659, 784].forEach((f, i) => tone(f, i === 2 ? 0.35 : 0.12, { at: i * 0.1, type: 'triangle', vol: 0.1 }));
+  },
+  fanfare() {
+    [523, 659, 784, 1047].forEach((f, i) => tone(f, i === 3 ? 0.6 : 0.13, { at: i * 0.1, type: 'triangle', vol: 0.1 }));
+    [1319, 1568, 2093].forEach((f, i) => tone(f, 0.2, { at: 0.42 + i * 0.07, vol: 0.06 }));
+  },
 };
 
 export function play(name) {
