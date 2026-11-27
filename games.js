@@ -1,8 +1,8 @@
 // Ten-second action mini-games for feeding, playing and washing. Each one runs
 // in a full-screen overlay: intro card, 3-2-1, play, then a graded end card.
-import { petSVG, esc, ICONS } from './render.js';
-import * as S from './sound.js';
-import { traits } from './pet.js';
+import { petSVG, esc, ICONS } from './render.js?v=mwy9c64y';
+import * as S from './sound.js?v=mwy9c64y';
+import { traits } from './pet.js?v=mwy9c64y';
 
 const PLAY_MS = 10000;
 const STEP_MS = 650; // each beat of the 3-2-1

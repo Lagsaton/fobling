@@ -1,7 +1,7 @@
 // A shareable "photo card" of the pet: a 1080x1350 PNG in the app's sticker style.
 // Drawn on a canvas; the creature itself comes from petSVG, rasterised via an <img>.
-import { petSVG, STAGE_NAMES } from './render.js';
-import { fmtDuration } from './pet.js';
+import { petSVG, STAGE_NAMES } from './render.js?v=mwy9c64y';
+import { fmtDuration } from './pet.js?v=mwy9c64y';
 
 const W = 1080;
 const H = 1350;

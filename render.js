@@ -1,7 +1,7 @@
 // Draws a fobling as inline SVG from its seed, stage, mood and adult form.
 // Style: soft vinyl-toy look. Big low-set shiny eyes, blush, outlines in a deep
 // shade of the body colour, a glossy highlight, tidy markings.
-import { traits, STAGES } from './pet.js';
+import { traits, STAGES } from './pet.js?v=mwy9c64y';
 
 const INK = 'var(--pet-ink)';
 const SCALE = [0.74, 0.83, 0.91, 1, 0.98];

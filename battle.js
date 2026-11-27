@@ -1,8 +1,8 @@
 // The battle screen: your pet against a pet read from someone else's fob.
 // Three rounds. You time your strike on a meter; their attacks are rolled.
-import { petSVG, esc, STAGE_NAMES } from './render.js';
-import * as P from './pet.js';
-import * as S from './sound.js';
+import { petSVG, esc, STAGE_NAMES } from './render.js?v=mwy9c64y';
+import * as P from './pet.js?v=mwy9c64y';
+import * as S from './sound.js?v=mwy9c64y';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));

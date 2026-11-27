@@ -1,8 +1,8 @@
 // Full-screen hatch and evolve animations. They wait for a tap before playing,
 // so nobody misses them and the browser lets the sound play.
-import { petSVG, eggSVG, esc, STAGE_NAMES } from './render.js';
-import { FORM_TEXT, TRAIT_NAMES } from './pet.js';
-import * as S from './sound.js';
+import { petSVG, eggSVG, esc, STAGE_NAMES } from './render.js?v=mwy9c64y';
+import { FORM_TEXT, TRAIT_NAMES } from './pet.js?v=mwy9c64y';
+import * as S from './sound.js?v=mwy9c64y';
 
 const CONFETTI = ['#e4513b', '#f0a35e', '#ffd34d', '#2e9b6f', '#2f8fd1', '#d94f8c', '#fffaf0'];
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;

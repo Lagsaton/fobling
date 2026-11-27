@@ -1,10 +1,10 @@
-import * as P from './pet.js';
-import { petSVG, eggSVG, ICONS, esc, STAGE_NAMES } from './render.js';
-import { ceremony } from './ceremony.js';
-import * as S from './sound.js';
-import { battle } from './battle.js';
-import { playGame } from './games.js';
-import * as W from './weather.js';
+import * as P from './pet.js?v=mwy9c64y';
+import { petSVG, eggSVG, ICONS, esc, STAGE_NAMES } from './render.js?v=mwy9c64y';
+import { ceremony } from './ceremony.js?v=mwy9c64y';
+import * as S from './sound.js?v=mwy9c64y';
+import { battle } from './battle.js?v=mwy9c64y';
+import { playGame } from './games.js?v=mwy9c64y';
+import * as W from './weather.js?v=mwy9c64y';
 
 // Instant updates: GitHub Pages lets phones cache files for 10 minutes. If a newer
 // version has been published, hop onto it (once per session, so it can't loop).
@@ -850,7 +850,9 @@ async function battleFlow() {
   if (!c.ok) return oops(c.reason);
   let foe;
   try {
-    ({ parsed: foe } = await withFob('Tap your rival’s fob', (found, msg, url) => {
+    // ?sim has only one pretend fob, so conjure a rival to fight
+    if (!HAS_NFC) foe = { pet: { ...P.hatch('Rival', now() - 5 * 1440, 9, { seed: rand16() }), xp: 160, fed: now() - 120, play: now() - 120, wash: now() - 120 } };
+    else ({ parsed: foe } = await withFob('Tap your rival’s fob', (found, msg, url) => {
       if (!found) throw blankError(msg, url);
       if (P.sameId(found.pet, pet)) throw new FobError('cant', 'That’s your own fob. Tap your rival’s.');
       const fst = P.status(found.pet, now());
@@ -890,7 +892,7 @@ async function battleFlow() {
 
 async function sharePhoto() {
   try {
-    const { shareCard } = await import('./photo.js');
+    const { shareCard } = await import('./photo.js?v=mwy9c64y');
     const st = statusNow();
     const r = await shareCard(pet, { ...st, form: st.form });
     if (r === 'downloaded') toast('Photo saved to your downloads.');
